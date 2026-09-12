@@ -7,7 +7,6 @@ import io.github.navms.application.chat.dto.CreateSessionCommand;
 import io.github.navms.application.chat.dto.RenameSessionCommand;
 import io.github.navms.domain.chat.entity.ChatMessage;
 import io.github.navms.domain.chat.entity.ChatSession;
-import io.github.navms.domain.chat.enums.ChatMessageType;
 import io.github.navms.domain.chat.repository.ChatMessageRepository;
 import io.github.navms.domain.chat.repository.ChatSessionRepository;
 import io.github.navms.domain.chat.valueobj.SessionTitle;
@@ -15,11 +14,11 @@ import io.github.navms.domain.chat.valueobj.UserId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.util.StringUtils;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 会话用例编排。
@@ -98,45 +97,20 @@ public class ChatSessionAppService {
             ChatSession session = sessionRepository.requireById(sessionId);
             session.applyFirstUserPrompt(prompt);
             sessionRepository.update(session);
-            appendRaw(session, ChatMessageType.USER, prompt, Map.of("messageType", "user", "content", prompt));
+            appendRaw(session, userMessage(prompt));
         });
     }
 
     /**
-     * 按消息类型与 payload 落库。
+     * 落库一条 AG-UI Message。
      *
-     * @param sessionId   会话 ID
-     * @param messageType 类型码
-     * @param content     文本
-     * @param payload     完整结构
+     * @param sessionId 会话 ID
+     * @param message   协议对象
      */
-    public void appendMessage(Long sessionId, String messageType, String content, Map<String, Object> payload) {
+    public void appendMessage(Long sessionId, Map<String, Object> message) {
         transactionTemplate.executeWithoutResult(status -> {
             ChatSession session = sessionRepository.requireById(sessionId);
-            appendRaw(session, ChatMessageType.fromCode(messageType), content, payload);
-        });
-    }
-
-    /**
-     * 落一条助手完整文本。
-     *
-     * @param sessionId  会话 ID
-     * @param text       文本
-     * @param tokenUsage Token 用量，可空
-     */
-    public void appendAssistantText(Long sessionId, String text, Map<String, Object> tokenUsage) {
-        if (!StringUtils.hasText(text)) {
-            return;
-        }
-        transactionTemplate.executeWithoutResult(status -> {
-            ChatSession session = sessionRepository.requireById(sessionId);
-            Map<String, Object> payload = new HashMap<>();
-            payload.put("messageType", "assistant");
-            payload.put("content", text);
-            if (tokenUsage != null && !tokenUsage.isEmpty()) {
-                payload.put("tokenUsage", tokenUsage);
-            }
-            appendRaw(session, ChatMessageType.ASSISTANT, text, payload);
+            appendRaw(session, message);
         });
     }
 
@@ -158,22 +132,21 @@ public class ChatSessionAppService {
         });
     }
 
-    /**
-     * 确认会话存在。
-     *
-     * @param sessionId 会话 ID
-     */
-    public void requireSession(Long sessionId) {
-        sessionRepository.requireById(sessionId);
-    }
-
-    private void appendRaw(ChatSession session, ChatMessageType type, String content, Map<String, Object> payload) {
+    private void appendRaw(ChatSession session, Map<String, Object> message) {
         Integer lastSeq = messageRepository.findLastBySessionId(session.getId())
                 .map(ChatMessage::getSeq)
                 .orElse(null);
-        ChatMessage message = ChatMessage.append(session.getId(), type, content, payload, lastSeq);
-        messageRepository.insert(message);
+        ChatMessage row = ChatMessage.append(session.getId(), message, lastSeq);
+        messageRepository.insert(row);
         session.touch();
         sessionRepository.update(session);
+    }
+
+    private static Map<String, Object> userMessage(String prompt) {
+        Map<String, Object> message = new LinkedHashMap<>();
+        message.put("id", UUID.randomUUID().toString());
+        message.put("role", "user");
+        message.put("content", prompt);
+        return message;
     }
 }

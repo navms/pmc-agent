@@ -25,12 +25,10 @@ public class ChatMessageDO {
 
     private Long sessionId;
 
-    private String messageType;
-
-    private String content;
+    private String role;
 
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private Map<String, Object> payload;
+    private Map<String, Object> message;
 
     private Integer seq;
 

@@ -429,13 +429,6 @@ textarea:focus-visible {
   color: var(--ink);
 }
 
-.tool-text {
-  padding: 0 14px 12px;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--ink);
-}
-
 .artifact-bar {
   display: flex;
   align-items: center;
@@ -477,9 +470,33 @@ textarea:focus-visible {
   color: var(--amber);
 }
 
+.confirm-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink);
+  font-size: 13px;
+}
+
 .confirm-actions {
   display: flex;
   gap: 8px;
+}
+
+.thinking-block {
+  margin: 8px 0;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  color: var(--mute);
+  font-size: 13px;
+}
+
+.thinking-block.nested {
+  margin: 4px 0;
+}
+
+.thinking-block > summary {
+  cursor: pointer;
 }
 
 .btn-approve,
@@ -753,26 +770,6 @@ textarea:focus-visible {
 
 .sub-agent-card__item {
   min-width: 0;
-}
-
-.sub-agent-card__tool-result {
-  border: 1px dashed var(--line);
-  border-radius: 8px;
-  background: #fff;
-  padding: 0;
-  overflow: hidden;
-}
-
-.sub-agent-card__tool-result > summary {
-  padding: 8px 12px;
-  font-size: 12px;
-  color: var(--mute);
-  cursor: pointer;
-  list-style: none;
-}
-
-.sub-agent-card__tool-result > summary::-webkit-details-marker {
-  display: none;
 }
 
 .bubble.assistant.nested .bubble-body,

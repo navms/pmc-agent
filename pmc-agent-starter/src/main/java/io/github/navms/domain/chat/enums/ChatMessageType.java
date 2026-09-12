@@ -5,7 +5,7 @@ import io.github.navms.domain.chat.exception.ChatErrorCode;
 import lombok.Getter;
 
 /**
- * 会话消息类型。
+ * AG-UI Message.role。
  *
  * @author navms
  */
@@ -15,8 +15,8 @@ public enum ChatMessageType {
     USER("user"),
     ASSISTANT("assistant"),
     TOOL("tool"),
-    TOOL_REQUEST("tool-request"),
-    TOOL_CONFIRM("tool-confirm");
+    REASONING("reasoning"),
+    ACTIVITY("activity");
 
     private final String code;
 
@@ -25,9 +25,7 @@ public enum ChatMessageType {
     }
 
     /**
-     * 按类型码解析。
-     *
-     * @param code 类型码
+     * @param code role
      * @return 枚举
      */
     public static ChatMessageType fromCode(String code) {

@@ -7,7 +7,6 @@ import { useChatSession } from './hooks/useChatSession'
 import { useConversations } from './hooks/useConversations'
 import { getUserId } from './lib/id'
 import { sessionUsage } from './lib/tokenUsage'
-import type { ToolFeedbackSubmit } from './types/chat'
 import './styles/tokens.css'
 
 export default function App() {
@@ -45,11 +44,11 @@ export default function App() {
     await conversations.refresh()
   }
 
-  const onConfirm = async (feedbacks: ToolFeedbackSubmit[]) => {
+  const onConfirm = async (approved: boolean) => {
     if (chat.sessionId == null) {
       return
     }
-    await chat.resume(chat.sessionId, feedbacks)
+    await chat.resume(chat.sessionId, approved)
     await conversations.refresh()
   }
 
@@ -72,14 +71,15 @@ export default function App() {
           <button type="button" className="ghost-btn" onClick={() => setSidebarOpen(true)}>
             会话
           </button>
-          <strong>PMC Agent</strong>
+          <strong>Agent</strong>
         </div>
         {hasMessages ? (
           <div className="thread">
             <MessageList
               messages={chat.messages}
               status={chat.status}
-              onConfirm={(f) => void onConfirm(f)}
+              streamingIds={chat.streamingIds}
+              onConfirm={(approved) => void onConfirm(approved)}
             />
           </div>
         ) : (

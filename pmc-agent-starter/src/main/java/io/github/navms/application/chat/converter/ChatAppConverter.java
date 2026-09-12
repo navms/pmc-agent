@@ -38,8 +38,12 @@ public interface ChatAppConverter {
      * @param source 消息
      * @return Info
      */
-    @Mapping(target = "messageType", source = "messageType.code")
-    ChatMessageInfo toChatMessageInfo(ChatMessage source);
+    default ChatMessageInfo toChatMessageInfo(ChatMessage source) {
+        if (source == null) {
+            return null;
+        }
+        return new ChatMessageInfo(source.toProtocolMessage());
+    }
 
     /**
      * @param source 消息列表

@@ -1,4 +1,6 @@
-import type { ChatMessage, TokenUsage } from '../types/chat'
+import type { Message } from '@ag-ui/client'
+import type { TokenUsage } from '../types/chat'
+import { isAssistant } from './agui/message'
 
 export function parseTokenUsage(value: unknown): TokenUsage | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -34,23 +36,29 @@ export function sumUsage(usages: Array<TokenUsage | undefined>): TokenUsage | un
   return { promptTokens, completionTokens, totalTokens }
 }
 
-export function sessionUsage(messages: ChatMessage[]): TokenUsage | undefined {
-  return sumUsage(messages.map((item) => item.tokenUsage))
+export function tokenUsageOf(message: Message): TokenUsage | undefined {
+  return parseTokenUsage(message.metadata?.tokenUsage)
 }
 
-export function usageForTurn(messages: ChatMessage[], index: number): TokenUsage | undefined {
+export function sessionUsage(messages: Message[]): TokenUsage | undefined {
+  return sumUsage(messages.map((item) => tokenUsageOf(item)))
+}
+
+export function usageForTurn(messages: Message[], index: number): TokenUsage | undefined {
   const start = findTurnStart(messages, index)
   const end = findTurnEnd(messages, index)
-  return sumUsage(messages.slice(start, end).map((item) => item.tokenUsage))
+  return sumUsage(messages.slice(start, end).map((item) => tokenUsageOf(item)))
 }
 
-export function isLastAssistantOfTurn(messages: ChatMessage[], index: number): boolean {
-  if (messages[index]?.messageType !== 'assistant') {
+export function isLastAssistantOfTurn(messages: Message[], index: number): boolean {
+  const current = messages[index]
+  if (!isAssistant(current) || current.toolCalls?.length) {
     return false
   }
   const end = findTurnEnd(messages, index)
   for (let cursor = end - 1; cursor > index; cursor -= 1) {
-    if (messages[cursor].messageType === 'assistant') {
+    const candidate = messages[cursor]
+    if (isAssistant(candidate) && !candidate.toolCalls?.length) {
       return false
     }
   }
@@ -65,18 +73,18 @@ export function formatSessionUsage(usage: TokenUsage): string {
   return `本会话 ${formatCount(resolvedTotal(usage))} tokens`
 }
 
-function findTurnStart(messages: ChatMessage[], index: number): number {
+function findTurnStart(messages: Message[], index: number): number {
   for (let cursor = index; cursor >= 0; cursor -= 1) {
-    if (messages[cursor].messageType === 'user') {
+    if (messages[cursor].role === 'user') {
       return cursor + 1
     }
   }
   return 0
 }
 
-function findTurnEnd(messages: ChatMessage[], index: number): number {
+function findTurnEnd(messages: Message[], index: number): number {
   for (let cursor = index + 1; cursor < messages.length; cursor += 1) {
-    if (messages[cursor].messageType === 'user') {
+    if (messages[cursor].role === 'user') {
       return cursor
     }
   }

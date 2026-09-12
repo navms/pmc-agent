@@ -4,13 +4,11 @@ import type { ChatSession } from '../types/chat'
 
 export function useConversations(userId: string) {
   const [sessions, setSessions] = useState<ChatSession[]>([])
-  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     const list = await listSessions(userId)
     setSessions(list)
-    setLoading(false)
     setError(null)
   }, [userId])
 
@@ -20,14 +18,12 @@ export function useConversations(userId: string) {
       .then((list) => {
         if (!cancelled) {
           setSessions(list)
-          setLoading(false)
           setError(null)
         }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : '无法加载会话')
-          setLoading(false)
         }
       })
     return () => {
@@ -46,5 +42,5 @@ export function useConversations(userId: string) {
     setSessions((prev) => prev.filter((item) => item.id !== sessionId))
   }, [])
 
-  return { sessions, loading, error, refresh, create, remove }
+  return { sessions, error, refresh, create, remove }
 }

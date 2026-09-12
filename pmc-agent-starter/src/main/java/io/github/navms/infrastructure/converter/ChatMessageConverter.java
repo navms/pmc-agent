@@ -18,8 +18,6 @@ public interface ChatMessageConverter {
     ChatMessageConverter INSTANCE = Mappers.getMapper(ChatMessageConverter.class);
 
     /**
-     * 实体使用手写 Builder，DO → Domain 在此组装。
-     *
      * @param source DO
      * @return 领域对象
      */
@@ -27,10 +25,9 @@ public interface ChatMessageConverter {
         if (source == null) {
             return null;
         }
-        return new ChatMessage.Builder(source.getSessionId(), ChatMessageType.fromCode(source.getMessageType()))
+        return new ChatMessage.Builder(source.getSessionId(), ChatMessageType.fromCode(source.getRole()))
                 .id(source.getId())
-                .content(source.getContent())
-                .payload(source.getPayload())
+                .message(source.getMessage())
                 .seq(source.getSeq())
                 .createdAt(source.getCreatedAt())
                 .deleted(source.getDeleted())
@@ -41,6 +38,6 @@ public interface ChatMessageConverter {
      * @param source 领域对象
      * @return DO
      */
-    @Mapping(target = "messageType", source = "messageType.code")
+    @Mapping(target = "role", source = "role.code")
     ChatMessageDO toChatMessageDO(ChatMessage source);
 }

@@ -4,10 +4,6 @@ import io.github.navms.application.chat.dto.ChatMessageInfo;
 import io.github.navms.application.chat.dto.ChatSessionInfo;
 import io.github.navms.application.chat.dto.CreateSessionCommand;
 import io.github.navms.application.chat.dto.RenameSessionCommand;
-import io.github.navms.application.chat.dto.ResumeChatCommand;
-import io.github.navms.application.chat.dto.StreamChatCommand;
-import io.github.navms.web.agent.param.ChatRequest;
-import io.github.navms.web.agent.param.ChatResumeRequest;
 import io.github.navms.web.agent.param.CreateSessionRequest;
 import io.github.navms.web.agent.param.RenameSessionRequest;
 import io.github.navms.web.agent.vo.ChatMessageVO;
@@ -44,18 +40,6 @@ public interface ChatWebConverter {
     RenameSessionCommand toRenameSessionCommand(Long sessionId, RenameSessionRequest request);
 
     /**
-     * @param request 流式请求
-     * @return 命令
-     */
-    StreamChatCommand toStreamChatCommand(ChatRequest request);
-
-    /**
-     * @param request 恢复请求
-     * @return 命令
-     */
-    ResumeChatCommand toResumeChatCommand(ChatResumeRequest request);
-
-    /**
      * @param source Info
      * @return VO
      */
@@ -71,7 +55,12 @@ public interface ChatWebConverter {
      * @param source Info
      * @return VO
      */
-    ChatMessageVO toChatMessageVO(ChatMessageInfo source);
+    default ChatMessageVO toChatMessageVO(ChatMessageInfo source) {
+        if (source == null) {
+            return null;
+        }
+        return new ChatMessageVO(source.fields());
+    }
 
     /**
      * @param source Info 列表

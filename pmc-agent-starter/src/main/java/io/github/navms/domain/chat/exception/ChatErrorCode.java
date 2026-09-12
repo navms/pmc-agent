@@ -11,8 +11,6 @@ import lombok.Getter;
 public enum ChatErrorCode {
 
     SESSION_NOT_FOUND("session not found"),
-    SESSION_ID_REQUIRED("sessionId cannot be null"),
-    PROMPT_REQUIRED("message cannot be null or empty"),
     TITLE_REQUIRED("title cannot be empty"),
     UNSUPPORTED_MESSAGE_TYPE("unsupported message type");
 
