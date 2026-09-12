@@ -2,8 +2,11 @@ package io.github.navms.config;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
+import io.agentscope.core.permission.PermissionRule;
+import io.github.navms.application.chat.hitl.WritePermissionResumeMiddleware;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.state.JsonFileAgentStateStore;
 import io.agentscope.core.tool.Toolkit;
@@ -14,6 +17,7 @@ import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.spring.boot.agui.common.AguiAgentId;
 import io.github.navms.tool.bank.BankAggregateTools;
 import io.github.navms.tool.bank.BankQueryTools;
+import io.github.navms.tool.bank.BankWriteTools;
 import io.github.navms.tool.bank.ChartTools;
 import io.github.navms.tool.bank.ExcelExportTools;
 import lombok.extern.slf4j.Slf4j;
@@ -25,10 +29,10 @@ import org.springframework.util.StringUtils;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 
 /**
- * HarnessAgent 父调度 + 四个业务子 Agent。子 Agent 用 {@code agent_spawn} 委派，
- * 同步执行时中间事件带 source 转发到父 {@code streamEvents()}。
+ * HarnessAgent 父调度 + 四个只读/导出子 Agent；写操作工具挂在父 Agent 上并走 ASK HITL。
  *
  * @author navms
  */
@@ -71,7 +75,8 @@ public class HarnessAgentConfig {
     private static final String SUPERVISOR_PROMPT = """
             你是“医院业财银企直连系统”总助手。
             问候、能力说明、澄清缺失条件、非业务闲聊：你自己用自然语言回答，不要编造业务数据。
-            业务任务必须通过 agent_spawn 交给子 Agent，禁止自己编造账户、金额、笔数。
+            只读业务（点查、汇总、导出、图表）必须通过 agent_spawn 交给子 Agent，禁止自己编造账户、金额、笔数。
+            写操作（提交支付、从银行同步流水/回单/对账单）由你直接调用写工具完成，调用前用一句话说明即将执行的操作；工具会走用户确认。
             agent_spawn 时 timeout_seconds 必须设为 %d（同步等待，以便用户看到子 Agent 流式过程）。
             一次只 spawn 一个子 Agent；有依赖时等上一步结果再 spawn 下一步（例如先汇总再图表）。
             
@@ -81,7 +86,9 @@ public class HarnessAgentConfig {
             - export_excel：导出 Excel
             - create_chart：柱状/折线/饼图
             
-            子 Agent 返回后，用简洁自然语言向用户转述要点，不要输出 JSON 路由数组。
+            用户说提交支付、付款、同步流水、同步回单、同步对账单、拉银行数据时：直接调用写工具，不要 spawn 子 Agent。
+            只查已有数据用 query_bank，不要调用写工具。
+            子 Agent 或写工具返回后，用简洁自然语言向用户转述要点，不要输出 JSON 路由数组。
             当前日期：%s
             """;
 
@@ -157,13 +164,15 @@ public class HarnessAgentConfig {
     }
 
     /**
-     * @param properties   配置
-     * @param chatModel    模型
-     * @param stateStore   状态
-     * @param queryAgent   查询
-     * @param summaryAgent 汇总
-     * @param excelAgent   导出
-     * @param chartAgent   图表
+     * @param properties                      配置
+     * @param chatModel                       模型
+     * @param stateStore                      状态
+     * @param queryAgent                      查询
+     * @param summaryAgent                    汇总
+     * @param excelAgent                      导出
+     * @param chartAgent                      图表
+     * @param bankWriteTools                  写操作（挂父 Agent）
+     * @param writePermissionResumeMiddleware 写操作 HITL resume
      * @return 父 HarnessAgent
      */
     @Bean
@@ -175,11 +184,14 @@ public class HarnessAgentConfig {
             ReActAgent queryAgent,
             ReActAgent summaryAgent,
             ReActAgent excelAgent,
-            ReActAgent chartAgent) {
+            ReActAgent chartAgent,
+            BankWriteTools bankWriteTools,
+            WritePermissionResumeMiddleware writePermissionResumeMiddleware) {
         Path workspace = Path.of(properties.getWorkspaceDir()).toAbsolutePath().normalize();
         workspace.toFile().mkdirs();
         int timeout = properties.getSpawnTimeoutSeconds();
         Toolkit parentToolkit = new Toolkit(ToolkitConfig.builder().parallel(false).build());
+        parentToolkit.registerTool(bankWriteTools);
         HarnessAgent supervisor = HarnessAgent.builder()
                 .name("pmc_supervisor")
                 .description("医院业财银企直连系统总助手")
@@ -189,7 +201,8 @@ public class HarnessAgentConfig {
                 .stateStore(stateStore)
                 .workspace(workspace)
                 .maxIters(12)
-                .permissionContext(bypassPermissions())
+                .permissionContext(supervisorPermissions())
+                .middleware(writePermissionResumeMiddleware)
                 .disableFilesystemTools()
                 .disableShellTool()
                 .disableMemoryTools()
@@ -255,6 +268,24 @@ public class HarnessAgentConfig {
         return PermissionContextState.builder()
                 .mode(PermissionMode.BYPASS)
                 .build();
+    }
+
+    /**
+     * 父 Agent：其余 BYPASS，写工具显式 ASK（对齐 AG-UI 主 Agent HITL）。
+     */
+    private static PermissionContextState supervisorPermissions() {
+        PermissionContextState.Builder builder = PermissionContextState.builder().mode(PermissionMode.BYPASS);
+        for (String toolName : List.of(
+                "submitBankPayOrder",
+                "syncTradeDetails",
+                "syncBalanceFlows",
+                "syncElectronicReceipts",
+                "syncElectronicStatements")) {
+            builder.addAskRule(
+                    toolName,
+                    new PermissionRule(toolName, null, PermissionBehavior.ASK, "policy"));
+        }
+        return builder.build();
     }
 
     private static String today() {

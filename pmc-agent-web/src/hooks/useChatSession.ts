@@ -109,7 +109,9 @@ export function useChatSession(userId: string) {
           markStreaming(event.messageId, false)
         },
         onCustomEvent: ({ event }) => {
-          publish(applyCustomEvent(event, messagesRef.current, scratch), statusRef.current)
+          const next = applyCustomEvent(event, messagesRef.current, scratch)
+          const last = next.at(-1)
+          publish(next, isConfirmActivity(last) ? 'awaiting_confirm' : statusRef.current)
         },
         onRawEvent: ({ event }) => {
           publish(applyRawEvent(event, messagesRef.current, scratch), statusRef.current)
@@ -117,8 +119,15 @@ export function useChatSession(userId: string) {
         onRunFinishedEvent: (params) => {
           streamingRef.current = new Set()
           if (params.outcome === 'interrupt') {
+            // Prefer official RUN_FINISHED interrupts so resume ids match backend pending.
+            const withoutConfirm = messagesRef.current.filter((item) => !isConfirmActivity(item))
             const activity = confirmActivity(params.interrupts)
-            publish(upsertAll(messagesRef.current, [activity]), 'awaiting_confirm')
+            publish(upsertAll(withoutConfirm, [activity]), 'awaiting_confirm')
+            return
+          }
+          const last = messagesRef.current.at(-1)
+          if (isConfirmActivity(last)) {
+            publish(messagesRef.current, 'awaiting_confirm')
             return
           }
           publish(messagesRef.current, 'idle')
@@ -221,7 +230,7 @@ function confirmActivity(interrupts: Interrupt[]): ActivityMessage {
 }
 
 function confirmInterrupts(message: Message | undefined): Array<{ id: string }> {
-  if (!message || !isConfirmActivity(message)) {
+  if (!isConfirmActivity(message)) {
     return []
   }
   const raw = message.content.interrupts

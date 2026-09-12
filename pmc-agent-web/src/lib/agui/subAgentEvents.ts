@@ -1,4 +1,4 @@
-import type { AssistantMessage, CustomEvent, Message, RawEvent, ReasoningMessage, ToolMessage } from '@ag-ui/client'
+import type { ActivityMessage, AssistantMessage, CustomEvent, Message, RawEvent, ReasoningMessage, ToolMessage } from '@ag-ui/client'
 import type { TokenUsage } from '../../types/chat'
 import { parseTokenUsage } from '../tokenUsage'
 import { upsertMessage } from './message'
@@ -77,6 +77,15 @@ export function applyCustomEvent(
     let next = closeStream(messages, scratch.subReasoning, agentName)
     next = closeStream(next, scratch.subText, agentName)
     return next
+  }
+  if (name === 'subagent.require_confirm') {
+    let next = closeStream(messages, scratch.subReasoning, agentName)
+    next = closeStream(next, scratch.subText, agentName)
+    const interrupts = interruptsFromCustom(value)
+    if (interrupts.length === 0) {
+      return next
+    }
+    return upsertMessage(next, confirmActivity(interrupts))
   }
   return messages
 }
@@ -163,6 +172,71 @@ function toolResult(agentName: string, toolCallId: string, toolName: string, dat
     content: data,
     metadata: { toolName, agentName },
   }
+}
+
+function confirmActivity(interrupts: Array<Record<string, unknown>>): ActivityMessage {
+  return {
+    id: crypto.randomUUID(),
+    role: 'activity',
+    activityType: 'TOOL_CONFIRM',
+    content: { interrupts },
+    metadata: { agentName: 'general_chat' },
+  }
+}
+
+function interruptsFromCustom(value: Record<string, unknown>): Array<Record<string, unknown>> {
+  const fromList = interruptMaps(value.interrupts)
+  if (fromList.length > 0) {
+    return fromList
+  }
+  const fromCalls = interruptMaps(value.toolCalls)
+  if (fromCalls.length > 0) {
+    return fromCalls
+  }
+  const toolCallId = stringField(value.toolCallId) || crypto.randomUUID()
+  const toolName = stringField(value.toolName) || stringField(value.name)
+  return [
+    {
+      id: toolCallId,
+      reason: 'permission_ask',
+      toolCallId,
+      message: toolName ? `请求执行 ${toolName}` : '请求执行写操作',
+      metadata: toolName ? { toolName } : {},
+    },
+  ]
+}
+
+function interruptMaps(raw: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return []
+  }
+  return raw.flatMap((item) => {
+    if (!item || typeof item !== 'object') {
+      return []
+    }
+    const source = item as Record<string, unknown>
+    const metadata =
+      source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
+        ? (source.metadata as Record<string, unknown>)
+        : {}
+    const toolCallId =
+      stringField(source.id) || stringField(source.toolCallId) || stringField(source.tool_call_id) || crypto.randomUUID()
+    const toolName =
+      stringField(source.toolName) || stringField(source.name) || stringField(metadata.toolName)
+    return [
+      {
+        id: toolCallId,
+        reason: stringField(source.reason) || 'permission_ask',
+        toolCallId,
+        message: stringField(source.message) || (toolName ? `请求执行 ${toolName}` : '请求执行写操作'),
+        metadata: Object.keys(metadata).length > 0 ? metadata : toolName ? { toolName } : {},
+      },
+    ]
+  })
+}
+
+function stringField(value: unknown): string {
+  return typeof value === 'string' ? value : ''
 }
 
 function applyUsage(messages: Message[], tokenUsage: TokenUsage): Message[] {

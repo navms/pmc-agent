@@ -25,8 +25,8 @@ export function withAgentName(message: Message, name = 'general_chat'): Message 
   return { ...message, metadata: { ...message.metadata, agentName: name } }
 }
 
-export function isConfirmActivity(message: Message): message is ActivityMessage {
-  return message.role === 'activity' && message.activityType === 'TOOL_CONFIRM'
+export function isConfirmActivity(message: Message | undefined): message is ActivityMessage {
+  return !!message && message.role === 'activity' && message.activityType === 'TOOL_CONFIRM'
 }
 
 export function isAssistant(message: Message): message is AssistantMessage {

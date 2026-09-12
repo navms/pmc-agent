@@ -10,9 +10,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -139,10 +141,12 @@ public class AguiPersistEnricher implements AguiEventEnricher {
         }
         if (event instanceof AguiEvent.RunFinished finished) {
             flushAllText(buffer);
-            if (finished.outcome() instanceof AguiEvent.RunFinishedInterruptOutcome interruptOutcome) {
-                persistInterrupts(buffer, interruptOutcome.interrupts());
+            if (finished.outcome() instanceof AguiEvent.RunFinishedInterruptOutcome(
+                    List<AguiEvent.Interrupt> interrupts
+            )) {
+                persistInterruptRows(buffer, interruptRows(interrupts));
                 chatSessionAppService.markStatus(buffer.sessionId, "interrupted");
-            } else {
+            } else if (!buffer.interruptPersisted) {
                 chatSessionAppService.markStatus(buffer.sessionId, "active");
             }
             runs.remove(buffer.key);
@@ -204,6 +208,8 @@ public class AguiPersistEnricher implements AguiEventEnricher {
         if ("subagent.require_confirm".equals(custom.name())) {
             flushSubReasoning(buffer, agentName);
             flushSubText(buffer, agentName);
+            persistInterruptRows(buffer, interruptRowsFromCustom(value));
+            chatSessionAppService.markStatus(buffer.sessionId, "interrupted");
             return;
         }
         if ("subagent.lifecycle".equals(custom.name()) && "AGENT_END".equals(type)) {
@@ -254,19 +260,9 @@ public class AguiPersistEnricher implements AguiEventEnricher {
         buffer.userPersisted = true;
     }
 
-    private void persistInterrupts(RunBuffer buffer, List<AguiEvent.Interrupt> interrupts) {
-        if (interrupts == null || interrupts.isEmpty()) {
+    private void persistInterruptRows(RunBuffer buffer, List<Map<String, Object>> rows) {
+        if (buffer.interruptPersisted || rows == null || rows.isEmpty()) {
             return;
-        }
-        List<Map<String, Object>> rows = new ArrayList<>();
-        for (AguiEvent.Interrupt interrupt : interrupts) {
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("id", interrupt.id());
-            row.put("reason", interrupt.reason());
-            row.put("toolCallId", interrupt.toolCallId());
-            row.put("message", interrupt.message());
-            row.put("metadata", interrupt.metadata());
-            rows.add(row);
         }
         Map<String, Object> content = new LinkedHashMap<>();
         content.put("interrupts", rows);
@@ -279,6 +275,102 @@ public class AguiPersistEnricher implements AguiEventEnricher {
         metadata.put("agentName", AguiAgentNames.GENERAL_CHAT);
         message.put("metadata", metadata);
         chatSessionAppService.appendMessage(buffer.sessionId, message);
+        buffer.interruptPersisted = true;
+    }
+
+    private static List<Map<String, Object>> interruptRows(List<AguiEvent.Interrupt> interrupts) {
+        if (interrupts == null || interrupts.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (AguiEvent.Interrupt interrupt : interrupts) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", interrupt.id());
+            row.put("reason", interrupt.reason());
+            row.put("toolCallId", interrupt.toolCallId());
+            row.put("message", interrupt.message());
+            row.put("metadata", interrupt.metadata());
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    private static List<Map<String, Object>> interruptRowsFromCustom(Map<String, Object> value) {
+        List<Map<String, Object>> fromList = interruptMaps(value.get("interrupts"));
+        if (!fromList.isEmpty()) {
+            return fromList;
+        }
+        List<Map<String, Object>> fromCalls = interruptMaps(value.get("toolCalls"));
+        if (!fromCalls.isEmpty()) {
+            return fromCalls;
+        }
+        String toolCallId = stringVal(value.get("toolCallId"));
+        String toolName = firstNonBlank(stringVal(value.get("toolName")), stringVal(value.get("name")));
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", StringUtils.hasText(toolCallId) ? toolCallId : UUID.randomUUID().toString());
+        row.put("reason", "permission_ask");
+        row.put("toolCallId", toolCallId);
+        row.put("message", StringUtils.hasText(toolName) ? "请求执行 " + toolName : "请求执行写操作");
+        Map<String, Object> meta = new LinkedHashMap<>();
+        if (StringUtils.hasText(toolName)) {
+            meta.put("toolName", toolName);
+        }
+        row.put("metadata", meta);
+        return List.of(row);
+    }
+
+    private static List<Map<String, Object>> interruptMaps(Object raw) {
+        if (!(raw instanceof List<?> list) || list.isEmpty()) {
+            return List.of();
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Object item : list) {
+            Map<String, Object> source = asMap(item);
+            if (source.isEmpty()) {
+                continue;
+            }
+            String toolCallId = firstNonBlank(
+                    stringVal(source.get("id")),
+                    stringVal(source.get("toolCallId")),
+                    stringVal(source.get("tool_call_id")));
+            String toolName = firstNonBlank(
+                    stringVal(source.get("toolName")),
+                    stringVal(source.get("name")),
+                    nestedToolName(source.get("metadata")));
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", StringUtils.hasText(toolCallId) ? toolCallId : UUID.randomUUID().toString());
+            row.put("reason", firstNonBlank(stringVal(source.get("reason")), "permission_ask"));
+            row.put("toolCallId", toolCallId);
+            row.put("message", firstNonBlank(
+                    stringVal(source.get("message")),
+                    StringUtils.hasText(toolName) ? "请求执行 " + toolName : "请求执行写操作"));
+            Object metadata = source.get("metadata");
+            if (metadata instanceof Map<?, ?>) {
+                row.put("metadata", asMap(metadata));
+            } else if (StringUtils.hasText(toolName)) {
+                row.put("metadata", Map.of("toolName", toolName));
+            } else {
+                row.put("metadata", Map.of());
+            }
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    private static String nestedToolName(Object metadata) {
+        return stringVal(asMap(metadata).get("toolName"));
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            if (StringUtils.hasText(value)) {
+                return value;
+            }
+        }
+        return "";
     }
 
     private void flushSubText(RunBuffer buffer, String agentName) {
@@ -455,6 +547,7 @@ public class AguiPersistEnricher implements AguiEventEnricher {
         private final Long sessionId;
         private final String key;
         private boolean userPersisted;
+        private boolean interruptPersisted;
         private Map<String, Object> pendingUsage;
         private final Map<String, StringBuilder> text = new LinkedHashMap<>();
         private final Map<String, String> textAgent = new LinkedHashMap<>();
@@ -464,7 +557,7 @@ public class AguiPersistEnricher implements AguiEventEnricher {
         private final Map<String, StringBuilder> toolArgs = new LinkedHashMap<>();
         private final Map<String, StringBuilder> toolResults = new LinkedHashMap<>();
         private final Map<String, String> toolNames = new LinkedHashMap<>();
-        private final java.util.Set<String> hiddenTools = new java.util.HashSet<>();
+        private final Set<String> hiddenTools = new HashSet<>();
 
         private RunBuffer(Long sessionId, String key) {
             this.sessionId = sessionId;
