@@ -36,12 +36,14 @@ export async function listMessages(sessionId: number): Promise<ChatMessage[]> {
   return rows.map((row) => {
     const agentName =
       typeof row.payload?.agentName === 'string' ? row.payload.agentName : undefined
+    const node = typeof row.payload?.node === 'string' ? row.payload.node : undefined
     return {
       id: String(row.id),
       messageType: row.messageType,
       content: row.content ?? '',
       payload: row.payload,
       agentName,
+      node,
       tokenUsage: parseTokenUsage(row.payload?.tokenUsage),
       createdAt: row.createdAt,
     }

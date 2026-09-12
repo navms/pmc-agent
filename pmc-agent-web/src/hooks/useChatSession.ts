@@ -3,6 +3,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react'
 import { resumeChat, streamChat } from '../api/chat'
 import { listMessages } from '../api/sessions'
 import type { ChatMessage, ChatResponse, ChatStatus, TokenUsage, ToolFeedbackSubmit } from '../types/chat'
+import { AGENT_TOOL_NAMES } from '../lib/agentTools'
 import { parseTokenUsage } from '../lib/tokenUsage'
 
 export function useChatSession(userId: string) {
@@ -115,7 +116,14 @@ function applyEvent(
   const type = payload?.messageType
   const tokenUsage = parseTokenUsage(event.tokenUsage)
   if (event.chunk) {
-    upsertAssistantChunk(event.chunk, tokenUsage, setMessages, assistantIdRef)
+    upsertAssistantChunk(
+      event.chunk,
+      tokenUsage,
+      setMessages,
+      assistantIdRef,
+      event.agentName,
+      event.node,
+    )
   }
   if (type === 'tool-request' || type === 'tool' || type === 'tool-confirm') {
     assistantIdRef.current = null
@@ -127,6 +135,7 @@ function applyEvent(
         content: payload?.content ?? '',
         payload,
         agentName: event.agentName,
+        node: event.node,
         tokenUsage,
       },
     ])
@@ -140,6 +149,8 @@ function applyEvent(
         messageType: 'assistant',
         content: payload.content ?? '',
         payload,
+        agentName: event.agentName,
+        node: event.node,
         tokenUsage,
       },
     ])
@@ -155,26 +166,97 @@ function upsertAssistantChunk(
   tokenUsage: TokenUsage | undefined,
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>,
   assistantIdRef: MutableRefObject<string | null>,
+  agentName?: string,
+  node?: string,
 ) {
+  const isSubNarrative = node === '_SUB_AGENT_NARRATIVE_'
   const currentId = assistantIdRef.current
-  if (!currentId) {
+
+  if (isSubNarrative) {
+    // 子 Agent 终答独立成条，不与 Supervisor 流式气泡合并
+    setMessages((prev) => {
+      const finalized = prev.map((item) =>
+        item.streaming && item.node !== '_SUB_AGENT_NARRATIVE_'
+          ? { ...item, streaming: false }
+          : item,
+      )
+      const last = finalized[finalized.length - 1]
+      if (
+        last?.messageType === 'assistant' &&
+        last.node === '_SUB_AGENT_NARRATIVE_' &&
+        last.agentName === agentName &&
+        last.streaming
+      ) {
+        assistantIdRef.current = last.id
+        return finalized.map((item) =>
+          item.id === last.id
+            ? {
+                ...item,
+                content: mergeChunk(item.content, chunk),
+                streaming: true,
+                tokenUsage: tokenUsage ?? item.tokenUsage,
+              }
+            : item,
+        )
+      }
+      const id = crypto.randomUUID()
+      assistantIdRef.current = id
+      return [
+        ...finalized,
+        {
+          id,
+          messageType: 'assistant' as const,
+          content: chunk,
+          agentName,
+          node,
+          streaming: true,
+          tokenUsage,
+        },
+      ]
+    })
+    return
+  }
+
+  // Supervisor 流式：若当前挂着子 Agent 气泡则切断
+  if (currentId) {
+    setMessages((prev) => {
+      const current = prev.find((item) => item.id === currentId)
+      if (current?.node === '_SUB_AGENT_NARRATIVE_') {
+        assistantIdRef.current = null
+      }
+      return prev
+    })
+  }
+
+  const activeId = assistantIdRef.current
+  if (!activeId) {
     const id = crypto.randomUUID()
     assistantIdRef.current = id
     setMessages((prev) => [
-      ...prev,
-      { id, messageType: 'assistant', content: chunk, streaming: true, tokenUsage },
+      ...prev.map((item) => (item.streaming ? { ...item, streaming: false } : item)),
+      {
+        id,
+        messageType: 'assistant',
+        content: chunk,
+        agentName,
+        node,
+        streaming: true,
+        tokenUsage,
+      },
     ])
     return
   }
   setMessages((prev) =>
     prev.map((item) => {
-      if (item.id !== currentId) {
+      if (item.id !== activeId) {
         return item
       }
       return {
         ...item,
         content: mergeChunk(item.content, chunk),
         streaming: true,
+        agentName: agentName ?? item.agentName,
+        node: node ?? item.node,
         tokenUsage: tokenUsage ?? item.tokenUsage,
       }
     }),
@@ -205,11 +287,14 @@ function mergeChunk(current: string, chunk: string): string {
   return current + chunk
 }
 
-const AGENT_TOOL_NAMES = new Set(['query_bank', 'summarize_bank', 'export_excel', 'create_chart'])
+/**
+ * 历史消息中 AgentTool 可能只把终答写在 tool.responseData，且后面没有 assistant。
+ * 加载时提升为助手气泡，并打上子 Agent 归组标记，兼容旧数据。
+ */
 
 /**
  * 历史消息中 AgentTool 可能只把终答写在 tool.responseData，且后面没有 assistant。
- * 加载时提升为助手气泡，兼容旧数据。
+ * 加载时提升为助手气泡，并打上子 Agent 归组标记，兼容旧数据。
  */
 function promoteAgentToolNarrativesInHistory(messages: ChatMessage[]): ChatMessage[] {
   const result: ChatMessage[] = []
@@ -219,7 +304,7 @@ function promoteAgentToolNarrativesInHistory(messages: ChatMessage[]): ChatMessa
       result.push(message)
       continue
     }
-    const narratives: string[] = []
+    const narratives: Array<{ agentName: string; text: string }> = []
     const compactedResponses = message.payload.responses.map((item) => {
       if (!item.name || !AGENT_TOOL_NAMES.has(item.name)) {
         return item
@@ -228,7 +313,7 @@ function promoteAgentToolNarrativesInHistory(messages: ChatMessage[]): ChatMessa
       if (!raw || !isHistoryAgentNarrative(raw)) {
         return item
       }
-      narratives.push(raw)
+      narratives.push({ agentName: item.name, text: raw })
       return {
         ...item,
         responseData: JSON.stringify({
@@ -245,14 +330,23 @@ function promoteAgentToolNarrativesInHistory(messages: ChatMessage[]): ChatMessa
     const next = messages[index + 1]
     const alreadyAssistant =
       next?.messageType === 'assistant' &&
-      narratives.some((text) => (next.content ?? '').includes(text.slice(0, 40)))
+      narratives.some(({ text }) => (next.content ?? '').includes(text.slice(0, 40)))
     if (!alreadyAssistant) {
       for (let narrativeIndex = 0; narrativeIndex < narratives.length; narrativeIndex += 1) {
+        const narrative = narratives[narrativeIndex]
         result.push({
           id: `${message.id}-promoted-${narrativeIndex}`,
           messageType: 'assistant',
-          content: narratives[narrativeIndex],
+          content: narrative.text,
+          agentName: narrative.agentName,
+          node: '_SUB_AGENT_NARRATIVE_',
         })
+      }
+    } else if (next?.messageType === 'assistant') {
+      const matched = narratives.find(({ text }) => (next.content ?? '').includes(text.slice(0, 40)))
+      if (matched) {
+        next.agentName = next.agentName ?? matched.agentName
+        next.node = next.node ?? '_SUB_AGENT_NARRATIVE_'
       }
     }
   }

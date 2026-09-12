@@ -70,6 +70,8 @@ export interface ChatMessage {
   payload?: MessagePayload | null
   /** 产生该消息的 Agent；子 Agent 内部 tool 时为 query_bank 等 */
   agentName?: string
+  /** 图节点；子 Agent 轨迹为 _SUB_AGENT_TOOL_ / _SUB_AGENT_NARRATIVE_ */
+  node?: string
   tokenUsage?: TokenUsage
   streaming?: boolean
   createdAt?: string

@@ -1,17 +1,20 @@
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ChatMessage, TokenUsage, ToolResult } from '../types/chat'
+import { AGENT_TOOL_NAMES } from '../lib/agentTools'
 import { ChartView } from './ChartView'
 import { formatTurnUsage } from '../lib/tokenUsage'
 
 interface MessageItemProps {
   message: ChatMessage
   turnUsage?: TokenUsage
+  /** 嵌套在子 Agent 卡片内时缩小样式 */
+  nested?: boolean
 }
 
-export function MessageItem({ message, turnUsage }: MessageItemProps) {
+export function MessageItem({ message, turnUsage, nested = false }: MessageItemProps) {
   try {
-    return renderMessage(message, turnUsage)
+    return renderMessage(message, turnUsage, nested)
   } catch (error) {
     console.error('MessageItem render failed', message.id, error)
     return (
@@ -23,7 +26,7 @@ export function MessageItem({ message, turnUsage }: MessageItemProps) {
   }
 }
 
-function renderMessage(message: ChatMessage, turnUsage?: TokenUsage) {
+function renderMessage(message: ChatMessage, turnUsage: TokenUsage | undefined, nested: boolean) {
   if (message.messageType === 'user') {
     return (
       <article className="bubble user">
@@ -33,7 +36,7 @@ function renderMessage(message: ChatMessage, turnUsage?: TokenUsage) {
   }
   if (message.messageType === 'assistant') {
     return (
-      <article className="bubble assistant">
+      <article className={`bubble assistant${nested ? ' nested' : ''}`}>
         <div className="bubble-body">
           <MarkdownBody text={message.content || (message.streaming ? '…' : '')} />
         </div>
@@ -43,7 +46,7 @@ function renderMessage(message: ChatMessage, turnUsage?: TokenUsage) {
   }
   if (message.messageType === 'tool-request') {
     return (
-      <details className="tool-block">
+      <details className={`tool-block${nested ? ' nested' : ''}`}>
         <summary>调用工具 {formatToolSummary(message)}</summary>
         <pre>{formatJson(message.payload?.toolCalls ?? message.payload)}</pre>
       </details>
@@ -62,7 +65,7 @@ function renderMessage(message: ChatMessage, turnUsage?: TokenUsage) {
         {artifacts.map((item, index) => (
           <ArtifactBlock key={`${item.kind}-${index}`} artifact={item} />
         ))}
-        <details className="tool-block">
+        <details className={`tool-block${nested ? ' nested' : ''}`}>
           <summary>工具结果 {formatToolSummary(message)}</summary>
           <pre>{formatJson(displayPayload)}</pre>
         </details>
@@ -71,7 +74,7 @@ function renderMessage(message: ChatMessage, turnUsage?: TokenUsage) {
   }
   if (message.messageType === 'tool-confirm') {
     return (
-      <details className="tool-block">
+      <details className={`tool-block${nested ? ' nested' : ''}`}>
         <summary>需要确认的工具调用</summary>
         <pre>{formatJson(message.payload?.toolFeedback ?? message.payload)}</pre>
       </details>
@@ -109,7 +112,6 @@ function MarkdownBody({ text }: { text: string }) {
   )
 }
 
-const AGENT_TOOL_NAMES = new Set(['query_bank', 'summarize_bank', 'export_excel', 'create_chart'])
 const DISPLAY_DATA_LIMIT = 2048
 
 function toolNames(message: ChatMessage): string[] {

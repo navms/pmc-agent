@@ -682,6 +682,109 @@ textarea:focus-visible {
   }
 }
 
+
+/* —— 子 Agent 内嵌卡片 —— */
+.sub-agent-card {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--brand);
+  border-radius: var(--radius-md);
+  background: #f8f9fc;
+  overflow: hidden;
+  animation: msg-in 0.28s ease both;
+}
+
+.sub-agent-card__header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.sub-agent-card__header:hover {
+  background: rgba(77, 107, 254, 0.04);
+}
+
+.sub-agent-card__title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand);
+  white-space: nowrap;
+}
+
+.sub-agent-card__name {
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--mute);
+  font-family: var(--mono);
+}
+
+.sub-agent-card__summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--mute);
+}
+
+.sub-agent-card__chevron {
+  font-size: 12px;
+  color: var(--mute);
+  white-space: nowrap;
+}
+
+.sub-agent-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 12px 14px;
+  border-top: 1px solid var(--line);
+}
+
+.sub-agent-card__item {
+  min-width: 0;
+}
+
+.sub-agent-card__tool-result {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 0;
+  overflow: hidden;
+}
+
+.sub-agent-card__tool-result > summary {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--mute);
+  cursor: pointer;
+  list-style: none;
+}
+
+.sub-agent-card__tool-result > summary::-webkit-details-marker {
+  display: none;
+}
+
+.bubble.assistant.nested .bubble-body,
+.bubble.assistant.nested .markdown {
+  font-size: 14px;
+}
+
+.tool-block.nested {
+  background: #fff;
+  font-size: 13px;
+}
+
 @media (max-width: 860px) {
   .app-shell {
     grid-template-columns: 1fr;

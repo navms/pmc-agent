@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.github.navms.infrastructure.mapper.ElectronicStatementMapper">
+
+    <select id="aggregate" resultType="io.github.navms.infrastructure.model.AggregateRowDO">
+        SELECT ${groupExpr} AS bucket,
+               COUNT(*) AS rowCount,
+               COALESCE(SUM(debit_total + credit_total), 0) AS totalAmount
+        FROM electronic_statement
+        WHERE deleted = 0
+          AND tenant_id = #{tenantId}
+        <if test="accountNo != null and accountNo != ''">
+            AND account_no = #{accountNo}
+        </if>
+        <if test="status != null and status != ''">
+            AND status = #{status}
+        </if>
+        <if test="startTime != null">
+            AND issue_time &gt;= #{startTime}
+        </if>
+        <if test="endTime != null">
+            AND issue_time &lt; #{endTime}
+        </if>
+        GROUP BY ${groupExpr}
+        ORDER BY bucket
+        LIMIT #{limit}
+    </select>
+</mapper>
