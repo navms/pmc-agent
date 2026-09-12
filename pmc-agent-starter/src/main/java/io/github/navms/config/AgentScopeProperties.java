@@ -29,14 +29,4 @@ public class AgentScopeProperties {
      */
     private int spawnTimeoutSeconds = 120;
 
-    /**
-     * AgentState 本地目录。
-     */
-    private String stateDir = "./data/agentscope/state";
-
-    /**
-     * Harness workspace 目录。
-     */
-    private String workspaceDir = "./data/agentscope/workspace";
-
 }
