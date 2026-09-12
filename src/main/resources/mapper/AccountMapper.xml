@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.github.navms.infrastructure.bank.mapper.AccountMapper">
+
+    <select id="aggregate" resultType="io.github.navms.infrastructure.bank.model.BankAggregateRowDO">
+        SELECT ${groupExpr} AS bucket,
+               COUNT(*) AS rowCount,
+               COALESCE(SUM(balance), 0) AS totalAmount
+        FROM bank_account
+        WHERE deleted = 0
+          AND tenant_id = #{tenantId}
+        <if test="accountNo != null and accountNo != ''">
+            AND account_no = #{accountNo}
+        </if>
+        <if test="status != null and status != ''">
+            AND status = #{status}
+        </if>
+        GROUP BY ${groupExpr}
+        ORDER BY bucket
+        LIMIT #{limit}
+    </select>
+</mapper>

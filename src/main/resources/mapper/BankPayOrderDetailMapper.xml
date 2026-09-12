@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.github.navms.infrastructure.bank.mapper.BankPayOrderDetailMapper">
+
+    <select id="aggregate" resultType="io.github.navms.infrastructure.bank.model.BankAggregateRowDO">
+        SELECT ${groupExpr} AS bucket,
+               COUNT(*) AS rowCount,
+               COALESCE(SUM(amount), 0) AS totalAmount
+        FROM bank_pay_order_detail
+        WHERE deleted = 0
+          AND tenant_id = #{tenantId}
+        <if test="accountNo != null and accountNo != ''">
+            AND account_no = #{accountNo}
+        </if>
+        <if test="status != null and status != ''">
+            AND status = #{status}
+        </if>
+        <if test="startTime != null">
+            AND created_at &gt;= #{startTime}
+        </if>
+        <if test="endTime != null">
+            AND created_at &lt; #{endTime}
+        </if>
+        GROUP BY ${groupExpr}
+        ORDER BY bucket
+        LIMIT #{limit}
+    </select>
+</mapper>

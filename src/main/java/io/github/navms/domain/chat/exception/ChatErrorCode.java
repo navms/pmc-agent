@@ -1,0 +1,25 @@
+package io.github.navms.domain.chat.exception;
+
+import lombok.Getter;
+
+/**
+ * 会话限界上下文错误码。
+ *
+ * @author navms
+ */
+@Getter
+public enum ChatErrorCode {
+
+    SESSION_NOT_FOUND("session not found"),
+    SESSION_ID_REQUIRED("sessionId cannot be null"),
+    PROMPT_REQUIRED("message cannot be null or empty"),
+    TITLE_REQUIRED("title cannot be empty"),
+    UNSUPPORTED_MESSAGE_TYPE("unsupported message type");
+
+    private final String message;
+
+    ChatErrorCode(String message) {
+        this.message = message;
+    }
+
+}
