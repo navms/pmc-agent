@@ -4,16 +4,18 @@ import io.agentscope.core.ReActAgent;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.ToolkitConfig;
+import io.agentscope.extensions.jdbc.JdbcDistributedStore;
 import io.agentscope.extensions.model.dashscope.DashScopeChatModel;
-import io.agentscope.extensions.mysql.MysqlDistributedStore;
 import io.agentscope.harness.agent.DistributedStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.memory.MemoryConfig;
 import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.spring.boot.agui.common.AguiAgentId;
 import io.github.navms.agent.middle.TimingMiddleware;
+import io.github.navms.agent.middle.TraceMiddleware;
 import io.github.navms.agent.tool.BankAggregateTools;
 import io.github.navms.agent.tool.BankQueryTools;
 import io.github.navms.agent.tool.BankWriteTools;
@@ -89,7 +91,7 @@ public class HarnessAgentConfig {
             用户说提交支付、付款、同步流水、同步回单、同步对账单、拉银行数据时：直接调用写工具，不要 spawn 子 Agent。
             只查已有数据用 query_bank，不要调用写工具。
             子 Agent 或写工具返回后，用简洁自然语言向用户转述要点，不要输出 JSON 路由数组。
-            当前日期：%s
+            当前日期：%s，我叫：%s
             """;
 
     /**
@@ -114,7 +116,7 @@ public class HarnessAgentConfig {
      */
     @Bean
     public DistributedStore distributedStore(DataSource dataSource) {
-        return MysqlDistributedStore.create(dataSource);
+        return JdbcDistributedStore.create(dataSource);
     }
 
     @Bean
@@ -137,7 +139,7 @@ public class HarnessAgentConfig {
         HarnessAgent supervisor = HarnessAgent.builder()
                 .name("pmc_supervisor")
                 .description("医院业财银企直连系统总助手")
-                .sysPrompt(SUPERVISOR_PROMPT.formatted(timeout, today()))
+                .sysPrompt(SUPERVISOR_PROMPT.formatted(timeout, today(), "何锦"))
                 .model(chatModel)
                 .toolkit(toolkit)
                 .distributedStore(distributedStore)
@@ -151,13 +153,9 @@ public class HarnessAgentConfig {
                                 .truncationText("... [truncated] ...")
                                 .build())
                         .build())
+                .memory(MemoryConfig.builder().build())
                 .toolResultEviction(ToolResultEvictionConfig.defaults())
-                .disableFilesystemTools()
-                .disableShellTool()
-                .disableMemoryTools()
-                .disableMemoryHooks()
-                .disableDynamicSkills()
-                .disableDefaultWorkspaceSkills()
+                .middleware(new TraceMiddleware())
                 .middleware(new TimingMiddleware())
                 .middleware(writePermissionResumeMiddleware)
                 .permissionContext(Permissions.askPermissions(List.of(

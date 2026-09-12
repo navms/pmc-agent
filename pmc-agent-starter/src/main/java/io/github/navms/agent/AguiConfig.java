@@ -2,7 +2,7 @@ package io.github.navms.agent;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
-import io.agentscope.spring.boot.agui.common.AguiRuntimeContextResolver;
+import io.agentscope.core.agui.runtime.AguiRuntimeContextResolver;
 import io.github.navms.application.chat.service.AguiPersistEnricher;
 import io.github.navms.application.chat.service.ChatSessionAppService;
 import org.springframework.context.annotation.Bean;
