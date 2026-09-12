@@ -1,4 +1,4 @@
-package io.github.navms.config;
+package io.github.navms.agent;
 
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;

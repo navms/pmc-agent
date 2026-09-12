@@ -1,4 +1,4 @@
-package io.github.navms.tool.bank;
+package io.github.navms.agent.tool;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;

@@ -1,4 +1,4 @@
-package io.github.navms.config;
+package io.github.navms.agent;
 
 import lombok.Getter;
 import lombok.Setter;

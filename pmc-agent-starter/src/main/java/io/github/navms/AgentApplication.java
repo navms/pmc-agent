@@ -10,7 +10,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  */
 @SpringBootApplication(scanBasePackages = {
         "io.github.navms.application",
-        "io.github.navms.config",
+        "io.github.navms.agent",
         "io.github.navms.domain.chat",
         "io.github.navms.infrastructure",
         "io.github.navms.tool",

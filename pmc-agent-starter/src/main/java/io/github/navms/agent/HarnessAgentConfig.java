@@ -1,4 +1,4 @@
-package io.github.navms.config;
+package io.github.navms.agent;
 
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.model.Model;
@@ -9,14 +9,17 @@ import io.agentscope.extensions.mysql.MysqlDistributedStore;
 import io.agentscope.harness.agent.DistributedStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.filesystem.spec.RemoteFilesystemSpec;
+import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
+import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.spring.boot.agui.common.AguiAgentId;
+import io.github.navms.agent.middle.TimingMiddleware;
+import io.github.navms.agent.tool.BankAggregateTools;
+import io.github.navms.agent.tool.BankQueryTools;
+import io.github.navms.agent.tool.BankWriteTools;
+import io.github.navms.agent.tool.ChartTools;
+import io.github.navms.agent.tool.ExcelExportTools;
 import io.github.navms.application.chat.hitl.WritePermissionResumeMiddleware;
-import io.github.navms.tool.bank.BankAggregateTools;
-import io.github.navms.tool.bank.BankQueryTools;
-import io.github.navms.tool.bank.BankWriteTools;
-import io.github.navms.tool.bank.ChartTools;
-import io.github.navms.tool.bank.ExcelExportTools;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -114,57 +117,17 @@ public class HarnessAgentConfig {
         return MysqlDistributedStore.create(dataSource);
     }
 
-    /**
-     * @param chatModel      模型
-     * @param bankQueryTools 点查
-     * @return 查询子 Agent
-     */
-    @Bean
-    public ReActAgent queryAgent(Model chatModel, BankQueryTools bankQueryTools) {
-        return getReActAgent("query_bank", QUERY_PROMPT.formatted(today()), chatModel, bankQueryTools);
-    }
-
-    /**
-     * @param chatModel          模型
-     * @param bankAggregateTools 汇总
-     * @return 汇总子 Agent
-     */
-    @Bean
-    public ReActAgent summaryAgent(Model chatModel, BankAggregateTools bankAggregateTools) {
-        return getReActAgent("summarize_bank", SUMMARY_PROMPT.formatted(today()), chatModel, bankAggregateTools);
-    }
-
-    /**
-     * @param chatModel        模型
-     * @param excelExportTools 导出
-     * @return Excel 子 Agent
-     */
-    @Bean
-    public ReActAgent excelAgent(Model chatModel, ExcelExportTools excelExportTools) {
-        return getReActAgent("export_excel", EXCEL_PROMPT.formatted(today()), chatModel, excelExportTools);
-    }
-
-    /**
-     * @param chatModel  模型
-     * @param chartTools 图表
-     * @return 图表子 Agent
-     */
-    @Bean
-    public ReActAgent chartAgent(Model chatModel, ChartTools chartTools) {
-        return getReActAgent("create_chart", CHART_PROMPT.formatted(today()), chatModel, chartTools);
-    }
-
     @Bean
     @AguiAgentId("pmc_supervisor")
     public HarnessAgent supervisorAgent(
             AgentScopeProperties properties,
             Model chatModel,
             DistributedStore distributedStore,
-            ReActAgent queryAgent,
-            ReActAgent summaryAgent,
-            ReActAgent excelAgent,
-            ReActAgent chartAgent,
 
+            BankQueryTools bankQueryTools,
+            BankAggregateTools bankAggregateTools,
+            ExcelExportTools excelExportTools,
+            ChartTools chartTools,
             BankWriteTools bankWriteTools,
             WritePermissionResumeMiddleware writePermissionResumeMiddleware) {
         int timeout = properties.getSpawnTimeoutSeconds();
@@ -180,13 +143,29 @@ public class HarnessAgentConfig {
                 .distributedStore(distributedStore)
                 .filesystem(new RemoteFilesystemSpec(distributedStore.baseStore()))
                 .maxIters(12)
+                .compaction(CompactionConfig.builder()
+                        .triggerMessages(30)
+                        .keepMessages(10)
+                        .truncateArgs(CompactionConfig.TruncateArgsConfig.builder()
+                                .maxArgLength(2000)
+                                .truncationText("... [truncated] ...")
+                                .build())
+                        .build())
+                .toolResultEviction(ToolResultEvictionConfig.defaults())
+                .disableFilesystemTools()
+                .disableShellTool()
+                .disableMemoryTools()
+                .disableMemoryHooks()
+                .disableDynamicSkills()
+                .disableDefaultWorkspaceSkills()
+                .middleware(new TimingMiddleware())
+                .middleware(writePermissionResumeMiddleware)
                 .permissionContext(Permissions.askPermissions(List.of(
                         "submitBankPayOrder",
                         "syncTradeDetails",
                         "syncBalanceFlows",
                         "syncElectronicReceipts",
                         "syncElectronicStatements")))
-                .middleware(writePermissionResumeMiddleware)
                 .subagent(getSubagentDeclaration("query_bank", """
                         点查银行账户、支付单、支付明细、交易明细、电子回单、余额流水、电子对账单。
                         适用于查某一账户、某一单号、最近几笔明细。最多返回 10 条，不适合汇总或导出。
@@ -203,10 +182,10 @@ public class HarnessAgentConfig {
                         根据银企汇总数据生成柱状图、折线图或饼图。
                         用户说图表、趋势、对比、可视化时使用。
                         """, CHART_PROMPT.formatted(today())))
-                .subagentFactory("query_bank", ignored -> queryAgent)
-                .subagentFactory("summarize_bank", ignored -> summaryAgent)
-                .subagentFactory("export_excel", ignored -> excelAgent)
-                .subagentFactory("create_chart", ignored -> chartAgent)
+                .subagentFactory("query_bank", name -> getReActAgent(name, QUERY_PROMPT.formatted(today()), chatModel, bankQueryTools))
+                .subagentFactory("export_excel", name -> getReActAgent(name, EXCEL_PROMPT.formatted(today()), chatModel, excelExportTools))
+                .subagentFactory("create_chart", name -> getReActAgent(name, CHART_PROMPT.formatted(today()), chatModel, chartTools))
+                .subagentFactory("summarize_bank", name -> getReActAgent(name, SUMMARY_PROMPT.formatted(today()), chatModel, bankAggregateTools))
                 .build();
 
         log.info("HarnessAgent pmc_supervisor ready, model={}, spawnTimeout={}s", properties.getModel(), timeout);
