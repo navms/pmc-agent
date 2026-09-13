@@ -1,5 +1,6 @@
 package io.github.navms.application.chat.service;
 
+import io.github.navms.agent.agui.AguiAgentNames;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

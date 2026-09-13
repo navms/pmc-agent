@@ -23,7 +23,6 @@ pmc:
   agent:
     api-key: ${AI_DASHSCOPE_API_KEY:sk-ws-H.PDXIEXY.11Ic.MEUCIQDhk2CvtVh6XoDh5UTpAPLpA1QgM5vjf6Aj4ruFzeLoSAIgJ945-S-kf3L7p404sy06SZHPuqDzC1B-ivz26CR8vHM}
     model: ${AI_MODEL:qwen3.7-flash}
-    spawn-timeout-seconds: 120
 
 agentscope:
   agui:

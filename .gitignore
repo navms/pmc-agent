@@ -43,3 +43,4 @@ application-local.yaml
 
 ### Node ###
 node_modules/
+.agentscope

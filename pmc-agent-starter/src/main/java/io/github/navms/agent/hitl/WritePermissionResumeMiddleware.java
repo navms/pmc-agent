@@ -1,4 +1,4 @@
-package io.github.navms.application.chat.hitl;
+package io.github.navms.agent.hitl;
 
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
@@ -14,6 +14,7 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
 
@@ -41,23 +42,24 @@ public class WritePermissionResumeMiddleware implements MiddlewareBase {
             RuntimeContext context,
             AgentInput input,
             Function<AgentInput, Flux<AgentEvent>> next) {
-        Boolean approved = extractApproved(context);
+        Boolean approved = isApproved(context);
         if (approved == null || !StringUtils.hasText(context.getSessionId())) {
             return next.apply(input);
         }
         WritePermissionHitlStore.PendingConfirm pending = store.peek(context.getSessionId());
-        if (pending == null || pending.toolCalls().isEmpty()) {
+        if (pending == null || CollectionUtils.isEmpty(pending.toolCalls())) {
             return next.apply(input);
         }
-        store.take(context.getSessionId());
-        List<ConfirmResult> confirmResults = new ArrayList<>(pending.toolCalls().size());
-        for (ToolUseBlock toolCall : pending.toolCalls()) {
+        WritePermissionHitlStore.PendingConfirm confirm = store.take(context.getSessionId());
+        List<ConfirmResult> confirmResults = new ArrayList<>(confirm.toolCalls().size());
+        for (ToolUseBlock toolCall : confirm.toolCalls()) {
             confirmResults.add(new ConfirmResult(approved, toolCall));
         }
+
         Map<String, Object> metadata = new HashMap<>();
         metadata.put(Msg.METADATA_CONFIRM_RESULTS, confirmResults);
-        if (StringUtils.hasText(pending.replyId())) {
-            metadata.put(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID, pending.replyId());
+        if (StringUtils.hasText(confirm.replyId())) {
+            metadata.put(Msg.METADATA_CONFIRM_REQUEST_REPLY_ID, confirm.replyId());
         }
         Msg resumeMsg = Msg.builder()
                 .name("user")
@@ -73,7 +75,7 @@ public class WritePermissionResumeMiddleware implements MiddlewareBase {
         return next.apply(new AgentInput(List.of(resumeMsg)));
     }
 
-    private static Boolean extractApproved(RuntimeContext context) {
+    private static Boolean isApproved(RuntimeContext context) {
         if (context == null) {
             return null;
         }
@@ -98,4 +100,5 @@ public class WritePermissionResumeMiddleware implements MiddlewareBase {
         }
         return approved;
     }
+
 }

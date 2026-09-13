@@ -1,4 +1,4 @@
-package io.github.navms.application.chat.hitl;
+package io.github.navms.agent.hitl;
 
 import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
 import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
@@ -8,7 +8,9 @@ import io.agentscope.core.event.RequireUserConfirmEvent;
 import io.agentscope.core.message.ToolUseBlock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.MapUtils;
 import org.springframework.stereotype.Component;
+import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.time.Duration;
@@ -18,7 +20,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 将写工具 RequireUserConfirm 转为 AG-UI interrupt，并缓存 pending（方案 A：父 Agent ASK）。
+ * 将写工具 RequireUserConfirm 转为 AG-UI interrupt，并缓存 pending。
  *
  * @author navms
  */
@@ -27,7 +29,9 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AguiPermissionHitlEnricher implements AguiEventEnricher {
 
-    /** 与前端 resume payload `{ approved }` 对齐；不可传 JSON null（Zod optional 不接受 null）。 */
+    /**
+     * 与前端 resume payload `{ approved }` 对齐
+     */
     private static final Map<String, Object> APPROVED_RESPONSE_SCHEMA = Map.of(
             "type", "object",
             "properties", Map.of("approved", Map.of("type", "boolean")),
@@ -40,15 +44,18 @@ public class AguiPermissionHitlEnricher implements AguiEventEnricher {
     @Override
     public List<AguiEvent> enrich(AgentEvent source, List<AguiEvent> events, AguiStreamContext context) {
         if (!(source instanceof RequireUserConfirmEvent requireConfirm) || context == null) {
-            return events == null ? List.of() : events;
+            return events;
         }
         List<ToolUseBlock> toolCalls = requireConfirm.getToolCalls();
-        if (toolCalls == null || toolCalls.isEmpty()) {
-            return events == null ? List.of() : events;
+        if (CollectionUtils.isEmpty(toolCalls)) {
+            return events;
         }
+
         String threadId = context.getThreadId();
         writePermissionHitlStore.save(threadId, requireConfirm.getReplyId(), toolCalls);
+
         String expiresAt = Instant.now().plus(INTERRUPT_TTL).toString();
+
         for (ToolUseBlock toolCall : toolCalls) {
             String toolCallId = toolCall.getId();
             if (!StringUtils.hasText(toolCallId)) {
@@ -56,7 +63,7 @@ public class AguiPermissionHitlEnricher implements AguiEventEnricher {
             }
             Map<String, Object> metadata = new LinkedHashMap<>();
             metadata.put("toolName", toolCall.getName());
-            if (toolCall.getInput() != null && !toolCall.getInput().isEmpty()) {
+            if (MapUtils.isNotEmpty(toolCall.getInput())) {
                 metadata.put("toolInput", toolCall.getInput());
             }
             metadata.put("agentscope.interruptKind", "permission_confirm");
@@ -75,7 +82,8 @@ public class AguiPermissionHitlEnricher implements AguiEventEnricher {
                     expiresAt,
                     metadata));
         }
-        log.debug("Parent write permission interrupt(s) registered for thread={}", threadId);
-        return events == null ? List.of() : events;
+        log.info("Parent write permission interrupt(s) registered for thread={}", threadId);
+        return events;
     }
+
 }

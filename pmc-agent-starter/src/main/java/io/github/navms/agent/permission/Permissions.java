@@ -1,4 +1,4 @@
-package io.github.navms.agent;
+package io.github.navms.agent.permission;
 
 import io.agentscope.core.permission.PermissionBehavior;
 import io.agentscope.core.permission.PermissionContextState;

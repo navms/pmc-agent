@@ -1,4 +1,4 @@
-package io.github.navms.application.chat.service;
+package io.github.navms.agent.agui;
 
 import io.agentscope.core.agui.adapter.strategy.AguiEventEnricher;
 import io.agentscope.core.agui.adapter.strategy.AguiStreamContext;
@@ -6,7 +6,9 @@ import io.agentscope.core.agui.event.AguiEvent;
 import io.agentscope.core.agui.model.AguiMessage;
 import io.agentscope.core.agui.model.RunAgentInput;
 import io.agentscope.core.event.AgentEvent;
+import io.github.navms.application.chat.service.ChatSessionAppService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -24,7 +26,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author navms
  */
 @Slf4j
-public class AguiPersistEnricher implements AguiEventEnricher {
+@Component
+public class AguiPersistEventEnricher implements AguiEventEnricher {
 
     private final ChatSessionAppService chatSessionAppService;
 
@@ -33,7 +36,7 @@ public class AguiPersistEnricher implements AguiEventEnricher {
     /**
      * @param chatSessionAppService 会话
      */
-    public AguiPersistEnricher(ChatSessionAppService chatSessionAppService) {
+    public AguiPersistEventEnricher(ChatSessionAppService chatSessionAppService) {
         this.chatSessionAppService = chatSessionAppService;
     }
 
@@ -59,103 +62,101 @@ public class AguiPersistEnricher implements AguiEventEnricher {
     }
 
     private void apply(AguiEvent event, RunBuffer buffer, AguiStreamContext context) {
-        if (event instanceof AguiEvent.RunStarted started) {
-            persistUserIfNeeded(started.input() != null ? started.input() : context.getRunInput(), buffer);
-            return;
-        }
-        if (event instanceof AguiEvent.TextMessageStart start) {
-            buffer.text.putIfAbsent(start.messageId(), new StringBuilder());
-            buffer.textAgent.putIfAbsent(start.messageId(), AguiAgentNames.GENERAL_CHAT);
-            return;
-        }
-        if (event instanceof AguiEvent.TextMessageContent content) {
-            if (StringUtils.hasText(content.delta())) {
-                buffer.text.computeIfAbsent(content.messageId(), ignored -> new StringBuilder()).append(content.delta());
+        switch (event) {
+            case AguiEvent.RunStarted started -> persistUserIfNeeded(
+                    started.input() != null ? started.input() : context.getRunInput(), buffer);
+
+            case AguiEvent.TextMessageStart start -> {
+                buffer.text.putIfAbsent(start.messageId(), new StringBuilder());
+                buffer.textAgent.putIfAbsent(start.messageId(), AguiAgentNames.GENERAL_CHAT);
             }
-            return;
-        }
-        if (event instanceof AguiEvent.TextMessageEnd end) {
-            flushText(buffer, end.messageId());
-            return;
-        }
-        if (event instanceof AguiEvent.ReasoningMessageStart start) {
-            buffer.reasoning.putIfAbsent(start.messageId(), new StringBuilder());
-            return;
-        }
-        if (event instanceof AguiEvent.ReasoningMessageContent content) {
-            if (StringUtils.hasText(content.delta())) {
-                buffer.reasoning.computeIfAbsent(content.messageId(), ignored -> new StringBuilder()).append(content.delta());
+
+            case AguiEvent.TextMessageContent content -> {
+                if (StringUtils.hasText(content.delta())) {
+                    buffer.text.computeIfAbsent(content.messageId(), ignored -> new StringBuilder())
+                            .append(content.delta());
+                }
             }
-            return;
-        }
-        if (event instanceof AguiEvent.ReasoningMessageEnd end) {
-            flushReasoning(buffer, end.messageId(), AguiAgentNames.GENERAL_CHAT);
-            return;
-        }
-        if (event instanceof AguiEvent.ToolCallStart start) {
-            if (AguiAgentNames.hideParentTool(AguiAgentNames.GENERAL_CHAT, start.toolCallName())) {
-                buffer.hiddenTools.add(start.toolCallId());
-                return;
+
+            case AguiEvent.TextMessageEnd end -> flushText(buffer, end.messageId());
+
+            case AguiEvent.ReasoningMessageStart start ->
+                    buffer.reasoning.putIfAbsent(start.messageId(), new StringBuilder());
+
+            case AguiEvent.ReasoningMessageContent content -> {
+                if (StringUtils.hasText(content.delta())) {
+                    buffer.reasoning.computeIfAbsent(content.messageId(), ignored -> new StringBuilder())
+                            .append(content.delta());
+                }
             }
-            buffer.toolNames.put(start.toolCallId(), start.toolCallName());
-            buffer.toolArgs.putIfAbsent(start.toolCallId(), new StringBuilder());
-            return;
-        }
-        if (event instanceof AguiEvent.ToolCallArgs args) {
-            if (buffer.hiddenTools.contains(args.toolCallId())) {
-                return;
+
+            case AguiEvent.ReasoningMessageEnd end ->
+                    flushReasoning(buffer, end.messageId(), AguiAgentNames.GENERAL_CHAT);
+
+            case AguiEvent.ToolCallStart start -> {
+                if (AguiAgentNames.hideParentTool(AguiAgentNames.GENERAL_CHAT, start.toolCallName())) {
+                    buffer.hiddenTools.add(start.toolCallId());
+                } else {
+                    buffer.toolNames.put(start.toolCallId(), start.toolCallName());
+                    buffer.toolArgs.putIfAbsent(start.toolCallId(), new StringBuilder());
+                }
             }
-            if (StringUtils.hasText(args.delta())) {
-                buffer.toolArgs.computeIfAbsent(args.toolCallId(), ignored -> new StringBuilder()).append(args.delta());
+
+            case AguiEvent.ToolCallArgs args -> {
+                if (buffer.hiddenTools.contains(args.toolCallId())) {
+                    break;
+                }
+                if (StringUtils.hasText(args.delta())) {
+                    buffer.toolArgs.computeIfAbsent(args.toolCallId(), ignored -> new StringBuilder())
+                            .append(args.delta());
+                }
             }
-            return;
-        }
-        if (event instanceof AguiEvent.ToolCallEnd end) {
-            if (buffer.hiddenTools.remove(end.toolCallId())) {
-                buffer.toolArgs.remove(end.toolCallId());
-                buffer.toolNames.remove(end.toolCallId());
-                return;
+
+            case AguiEvent.ToolCallEnd end -> {
+                if (buffer.hiddenTools.remove(end.toolCallId())) {
+                    buffer.toolArgs.remove(end.toolCallId());
+                    buffer.toolNames.remove(end.toolCallId());
+                } else {
+                    persistToolCall(buffer, end.toolCallId(), AguiAgentNames.GENERAL_CHAT);
+                }
             }
-            persistToolCall(buffer, end.toolCallId(), AguiAgentNames.GENERAL_CHAT);
-            return;
-        }
-        if (event instanceof AguiEvent.ToolCallResult result) {
-            if (buffer.hiddenTools.contains(result.toolCallId())) {
-                return;
+
+            case AguiEvent.ToolCallResult result -> {
+                if (buffer.hiddenTools.contains(result.toolCallId())) {
+                    break;
+                }
+                persistToolResult(
+                        buffer,
+                        result.toolCallId(),
+                        buffer.toolNames.getOrDefault(result.toolCallId(), ""),
+                        result.content() == null ? "" : result.content(),
+                        AguiAgentNames.GENERAL_CHAT);
             }
-            persistToolResult(
-                    buffer,
-                    result.toolCallId(),
-                    buffer.toolNames.getOrDefault(result.toolCallId(), ""),
-                    result.content() == null ? "" : result.content(),
-                    AguiAgentNames.GENERAL_CHAT);
-            return;
-        }
-        if (event instanceof AguiEvent.Custom custom) {
-            applyCustom(custom, buffer);
-            return;
-        }
-        if (event instanceof AguiEvent.Raw raw) {
-            applyRaw(raw, buffer);
-            return;
-        }
-        if (event instanceof AguiEvent.RunFinished finished) {
-            flushAllText(buffer);
-            if (finished.outcome() instanceof AguiEvent.RunFinishedInterruptOutcome(
-                    List<AguiEvent.Interrupt> interrupts
-            )) {
-                persistInterruptRows(buffer, interruptRows(interrupts));
-                chatSessionAppService.markStatus(buffer.sessionId, "interrupted");
-            } else if (!buffer.interruptPersisted) {
+
+            case AguiEvent.Custom custom -> applyCustom(custom, buffer);
+
+            case AguiEvent.Raw raw -> applyRaw(raw, buffer);
+
+            case AguiEvent.RunFinished finished -> {
+                flushAllText(buffer);
+                if (finished.outcome() instanceof AguiEvent.RunFinishedInterruptOutcome(
+                        List<AguiEvent.Interrupt> interrupts
+                )) {
+                    persistInterruptRows(buffer, interruptRows(interrupts));
+                    chatSessionAppService.markStatus(buffer.sessionId, "interrupted");
+                } else if (!buffer.interruptPersisted) {
+                    chatSessionAppService.markStatus(buffer.sessionId, "active");
+                }
+                runs.remove(buffer.key);
+            }
+
+            case AguiEvent.RunError ignored -> {
+                flushAllText(buffer);
                 chatSessionAppService.markStatus(buffer.sessionId, "active");
+                runs.remove(buffer.key);
             }
-            runs.remove(buffer.key);
-            return;
-        }
-        if (event instanceof AguiEvent.RunError) {
-            flushAllText(buffer);
-            chatSessionAppService.markStatus(buffer.sessionId, "active");
-            runs.remove(buffer.key);
+
+            default -> log.debug("No handle AG-UI event {}", event);
         }
     }
 

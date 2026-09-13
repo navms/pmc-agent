@@ -1,4 +1,4 @@
-package io.github.navms.application.chat.service;
+package io.github.navms.agent.agui;
 
 import org.springframework.util.StringUtils;
 
