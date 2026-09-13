@@ -11,10 +11,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 
 /**
  * 向真实库灌入医院银企场景数据。默认 mvn test 不执行，需指定 groups=seed。
@@ -37,6 +40,10 @@ class BankMockDataSeedIT {
     private static final int BATCH_SIZE = 1_000;
 
     private static final int CREDIT_EXTRA = 200;
+
+    private static final int WORK_START_HOUR = 9;
+
+    private static final int WORK_END_HOUR = 17;
 
     private static final String[] CREATORS = {"U1001", "U1002"};
 
@@ -76,7 +83,9 @@ class BankMockDataSeedIT {
     void seedHospitalBankData() {
         wipeTenant();
         BigDecimal[] running = insertAccounts();
+        Random rng = new Random(20250303L);
         LocalDateTime cursor = LocalDateTime.of(2025, 3, 3, 9, 0, 0);
+        LocalDateTime lastEventTime = cursor;
         long tradeId = 1L;
         int successDetails = 0;
         int failedDetails = 0;
@@ -95,13 +104,14 @@ class BankMockDataSeedIT {
             String payerName = account[1];
             String bankName = account[3];
             String createdBy = CREATORS[orderIndex % 2];
-            LocalDateTime applyTime = cursor.plusMinutes(orderIndex);
-            long orderId = orderIndex;
+            LocalDateTime applyTime = nextBusinessApplyTime(cursor, rng);
+            cursor = applyTime;
             String orderNo = "BP" + pad(orderIndex, 10);
 
             BigDecimal total = BigDecimal.ZERO;
             PayOrderStatusAgg agg = PayOrderStatusAgg.SUCCESS;
             int failedInOrder = 0;
+            LocalDateTime orderPayTime = randomPayTime(applyTime, rng);
 
             for (int seq = 1; seq <= DETAILS_PER_ORDER; seq++) {
                 String[] payee = PAYEES[(orderIndex + seq) % PAYEES.length];
@@ -118,11 +128,12 @@ class BankMockDataSeedIT {
                     successDetails++;
                 }
                 String detailNo = "TD" + pad(orderIndex, 8) + pad(seq, 2);
-                long detailId = (orderId - 1) * DETAILS_PER_ORDER + seq;
+                long detailId = ((long) orderIndex - 1) * DETAILS_PER_ORDER + seq;
                 String failReason = failed ? "收款账号校验失败" : null;
+                LocalDateTime detailCreated = applyTime.plusSeconds(rng.nextInt(16));
                 detailBatch.add(new Object[]{
-                        detailId, TENANT, createdBy, applyTime, applyTime, 0,
-                        orderId, orderNo, detailNo, accountNo,
+                        detailId, TENANT, createdBy, detailCreated, detailCreated, 0,
+                        (long) orderIndex, orderNo, detailNo, accountNo,
                         payee[0], payee[1], payee[2], amount, "CNY", status,
                         payee[3], seq, failReason
                 });
@@ -130,7 +141,7 @@ class BankMockDataSeedIT {
                     continue;
                 }
                 String receiptNo = "RC" + pad(orderIndex, 8) + pad(seq, 2);
-                LocalDateTime payTime = applyTime.plusMinutes(30);
+                LocalDateTime payTime = orderPayTime.plusSeconds(rng.nextInt(16));
                 running[accountIdx] = running[accountIdx].subtract(amount);
                 BigDecimal after = running[accountIdx];
                 BigDecimal before = after.add(amount);
@@ -147,9 +158,10 @@ class BankMockDataSeedIT {
 
             String orderStatus = agg == PayOrderStatusAgg.SUCCESS ? "success"
                     : agg == PayOrderStatusAgg.FAILED ? "failed" : "success";
-            LocalDateTime payTime = "failed".equals(orderStatus) ? null : applyTime.plusMinutes(30);
+            LocalDateTime payTime = "failed".equals(orderStatus) ? null : orderPayTime;
+            lastEventTime = payTime != null ? payTime : applyTime;
             orderBatch.add(new Object[]{
-                    orderId, TENANT, createdBy, applyTime, applyTime, 0,
+                    (long) orderIndex, TENANT, createdBy, applyTime, applyTime, 0,
                     orderNo, accountNo, payerName, total, DETAILS_PER_ORDER, "CNY",
                     orderStatus, "采购及运营付款", "医院对公付款", applyTime, payTime,
                     "ebank", agg == PayOrderStatusAgg.FAILED ? "全部明细失败" : null
@@ -161,7 +173,7 @@ class BankMockDataSeedIT {
             }
         }
 
-        insertCreditExtras(running, tradeId);
+        insertCreditExtras(running, tradeId, lastEventTime, rng);
         log.info("seed done. successDetails={} failedDetails={}", successDetails, failedDetails);
     }
 
@@ -198,8 +210,8 @@ class BankMockDataSeedIT {
         return running;
     }
 
-    private void insertCreditExtras(BigDecimal[] running, long startTradeId) {
-        LocalDateTime t = LocalDateTime.of(2026, 8, 15, 14, 0, 0);
+    private void insertCreditExtras(BigDecimal[] running, long startTradeId, LocalDateTime lastEventTime, Random rng) {
+        LocalDateTime occurCursor = nextWorkdayMorning(lastEventTime, rng, 30);
         List<Object[]> trades = new ArrayList<>();
         List<Object[]> receipts = new ArrayList<>();
         List<Object[]> statements = new ArrayList<>();
@@ -213,7 +225,8 @@ class BankMockDataSeedIT {
             running[accountIdx] = before.add(amount);
             String detailNo = "TDX" + pad(i + 1, 8);
             String receiptNo = "RCX" + pad(i + 1, 8);
-            LocalDateTime occur = t.plusHours(i);
+            LocalDateTime occur = occurCursor;
+            occurCursor = advanceBusinessTime(occur, Duration.ofHours(2 + rng.nextInt(7)), rng);
             String createdBy = CREATORS[i % 2];
             trades.add(tradeRow(tradeId, createdBy, occur, detailNo, receiptNo, account[0],
                     "credit", amount, "102100000001", "市医保局", "人民银行", "医保基金拨付",
@@ -354,6 +367,53 @@ class BankMockDataSeedIT {
 
     private static String pad(long value, int width) {
         return String.format("%0" + width + "d", value);
+    }
+
+    private static LocalDateTime nextBusinessApplyTime(LocalDateTime cursor, Random rng) {
+        int gapSeconds = 30 + rng.nextInt(8 * 60 - 30 + 1);
+        LocalDateTime candidate = cursor.plusSeconds(gapSeconds + rng.nextInt(60));
+        if (notInWorkWindow(candidate)) {
+            return nextWorkdayMorning(cursor, rng, 30);
+        }
+        return candidate;
+    }
+
+    private static LocalDateTime randomPayTime(LocalDateTime applyTime, Random rng) {
+        LocalDateTime pay = applyTime.plusMinutes(5 + rng.nextInt(86));
+        if (notInWorkWindow(pay)) {
+            return nextWorkdayMorning(applyTime, rng, 60);
+        }
+        return pay;
+    }
+
+    private static LocalDateTime advanceBusinessTime(LocalDateTime from, Duration delta, Random rng) {
+        LocalDateTime next = from.plus(delta);
+        if (notInWorkWindow(next)) {
+            return nextWorkdayMorning(from, rng, 30);
+        }
+        return next;
+    }
+
+    private static LocalDateTime nextWorkdayMorning(LocalDateTime from, Random rng, int maxOffsetMinutes) {
+        LocalDate date = from.toLocalDate().plusDays(1);
+        while (isWeekend(date)) {
+            date = date.plusDays(1);
+        }
+        int offsetMinutes = maxOffsetMinutes <= 0 ? 0 : rng.nextInt(maxOffsetMinutes + 1);
+        return date.atTime(WORK_START_HOUR, 0).plusMinutes(offsetMinutes).plusSeconds(rng.nextInt(60));
+    }
+
+    private static boolean notInWorkWindow(LocalDateTime time) {
+        if (isWeekend(time.toLocalDate())) {
+            return true;
+        }
+        int hour = time.getHour();
+        return hour < WORK_START_HOUR || hour >= WORK_END_HOUR;
+    }
+
+    private static boolean isWeekend(LocalDate date) {
+        DayOfWeek day = date.getDayOfWeek();
+        return day == DayOfWeek.SATURDAY || day == DayOfWeek.SUNDAY;
     }
 
     private enum PayOrderStatusAgg {
