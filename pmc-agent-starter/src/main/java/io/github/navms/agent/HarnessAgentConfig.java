@@ -15,18 +15,19 @@ import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.spring.boot.agui.common.AguiAgentId;
 import io.github.navms.agent.hitl.WritePermissionResumeMiddleware;
-import io.github.navms.agent.middle.TimingMiddleware;
-import io.github.navms.agent.middle.TraceMiddleware;
+import io.github.navms.agent.middle.LangfuseSessionMiddleware;
 import io.github.navms.agent.permission.Permissions;
 import io.github.navms.agent.tool.BankAggregateTools;
 import io.github.navms.agent.tool.BankQueryTools;
 import io.github.navms.agent.tool.BankWriteTools;
 import io.github.navms.agent.tool.ChartTools;
 import io.github.navms.agent.tool.ExcelExportTools;
+import io.opentelemetry.api.OpenTelemetry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.util.StringUtils;
 
 import javax.sql.DataSource;
@@ -112,11 +113,13 @@ public class HarnessAgentConfig {
     }
 
     /**
-     * @param dataSource Spring 数据源（会话状态写入独立库 agentscope）
+     * @param dataSource            Spring 数据源（会话状态写入独立库 agentscope）
+     * @param langfuseOpenTelemetry 先注册 GlobalOpenTelemetry，再让 JDBC 建连
      * @return MySQL DistributedStore
      */
     @Bean
-    public DistributedStore distributedStore(DataSource dataSource) {
+    @DependsOn("langfuseOpenTelemetry")
+    public DistributedStore distributedStore(DataSource dataSource, OpenTelemetry langfuseOpenTelemetry) {
         return JdbcDistributedStore.create(dataSource);
     }
 
@@ -154,8 +157,7 @@ public class HarnessAgentConfig {
                         .build())
                 .memory(MemoryConfig.builder().build())
                 .toolResultEviction(ToolResultEvictionConfig.defaults())
-                .middleware(new TraceMiddleware())
-                .middleware(new TimingMiddleware())
+                .middleware(new LangfuseSessionMiddleware())
                 .middleware(writePermissionResumeMiddleware)
                 .permissionContext(Permissions.askPermissions(List.of(
                         "submitBankPayOrder",
@@ -203,6 +205,7 @@ public class HarnessAgentConfig {
                 .toolkit(toolkit)
                 .maxIters(8)
                 .permissionContext(Permissions.bypassPermissions())
+                .middleware(new LangfuseSessionMiddleware())
                 .build();
     }
 
