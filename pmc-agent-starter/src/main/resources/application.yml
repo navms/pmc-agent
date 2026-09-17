@@ -30,9 +30,12 @@ pmc:
     model: ${AI_MODEL:qwen3.7-flash}
   langfuse:
     enabled: ${LANGFUSE_ENABLED:true}
-    host: ${LANGFUSE_HOST:http://localhost:3000}
+    host: ${LANGFUSE_HOST:http://127.0.0.1:3000}
     public-key: ${LANGFUSE_PUBLIC_KEY:pk-lf-1234567890}
     secret-key: ${LANGFUSE_SECRET_KEY:sk-lf-1234567890}
+    prompt-label: ${LANGFUSE_PROMPT_LABEL:production}
+    prompt-cache-ttl-seconds: ${LANGFUSE_PROMPT_CACHE_TTL:60}
+    prompt-seed: ${LANGFUSE_PROMPT_SEED:true}
 
 agentscope:
   agui:

@@ -21,7 +21,7 @@ public class LangfuseProperties {
     private boolean enabled = true;
 
     /**
-     * Langfuse Web 基址，例如 http://localhost:3000。
+     * Langfuse Web 基址
      */
     private String host = "http://localhost:3000";
 
@@ -36,6 +36,21 @@ public class LangfuseProperties {
     private String secretKey;
 
     /**
+     * 运行时拉取的 prompt label，默认 production。
+     */
+    private String promptLabel = "production";
+
+    /**
+     * 客户端缓存秒数，对齐 Langfuse SDK 默认 60s。
+     */
+    private int promptCacheTtlSeconds = 60;
+
+    /**
+     * 远端不存在时是否用本地 fallback 正文 seed 一份并打上 promptLabel。
+     */
+    private boolean promptSeed = true;
+
+    /**
      * @return 开关打开且密钥齐全时才导出
      */
     public boolean isExportEnabled() {
@@ -46,8 +61,18 @@ public class LangfuseProperties {
      * @return OTLP traces 端点
      */
     public String otlpTracesEndpoint() {
-        String base = host.endsWith("/") ? host.substring(0, host.length() - 1) : host;
-        return base + "/api/public/otel/v1/traces";
+        return apiBaseUrl() + "/api/public/otel/v1/traces";
+    }
+
+    /**
+     * @return 规范化后的 Langfuse Web 基址（localhost → 127.0.0.1）
+     */
+    public String apiBaseUrl() {
+        String base = StringUtils.hasText(host) ? host : "http://127.0.0.1:3000";
+        if (base.contains("://localhost")) {
+            base = base.replace("://localhost", "://127.0.0.1");
+        }
+        return base.endsWith("/") ? base.substring(0, base.length() - 1) : base;
     }
 
 }

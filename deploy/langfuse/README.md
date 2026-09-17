@@ -1,6 +1,7 @@
 # 本地 Langfuse
 
-给 `pmc-agent` 用的自托管 Langfuse（Docker Compose）。Agent 进程仍在宿主机 `8080` 运行，通过 `http://localhost:3000` 上报 trace。
+给 `pmc-agent` 用的自托管 Langfuse（Docker Compose）。Agent 进程仍在宿主机 `8080` 运行，通过 `http://localhost:3000` 上报
+trace。
 
 ## 启动
 
@@ -20,13 +21,30 @@ docker compose up -d
 - public：`pk-lf-1234567890`
 - secret：`sk-lf-1234567890`
 
+## Prompt Management
+
+Prompt 拉取 / seed 使用官方 [`langfuse-java`](https://github.com/langfuse/langfuse-java)；Tracing 仍走 OpenTelemetry
+OTLP（官方推荐的 Java 上报方式）。
+
+首次启动且密钥齐全时，会把本地 fallback 正文 seed 到 Langfuse（label=`production`）：
+
+- `pmc/supervisor`
+- `pmc/query_bank`
+- `pmc/summarize_bank`
+- `pmc/export_excel`
+- `pmc/create_chart`
+
+之后在 UI 改文案并移动 `production` label 即可，应用约 60s 缓存后生效。变量：`{{today}}`、`{{name}}`。Langfuse 不可用时回退到代码内模板。
+
 ## 关掉 tracing
 
 启动 Java 时设 `LANGFUSE_ENABLED=false`。
 
 ## 与 MySQL Connector/J 的注意点
 
-引入 `opentelemetry-sdk` 后，MySQL Connector/J 默认会在建连时调用 `GlobalOpenTelemetry.get()`，抢先占住全局实例，导致应用侧 `buildAndRegisterGlobal` 失败（[Quarkus #51456](https://github.com/quarkusio/quarkus/issues/51456) 同根因）。本仓库已在 JDBC URL / Hikari 属性里设置 `openTelemetry=DISABLED`，由应用统一向 Langfuse 导出 Agent 链路。
+引入 `opentelemetry-sdk` 后，MySQL Connector/J 默认会在建连时调用 `GlobalOpenTelemetry.get()`，抢先占住全局实例，导致应用侧
+`buildAndRegisterGlobal` 失败（[Quarkus #51456](https://github.com/quarkusio/quarkus/issues/51456) 同根因）。本仓库已在
+JDBC URL / Hikari 属性里设置 `openTelemetry=DISABLED`，由应用统一向 Langfuse 导出 Agent 链路。
 
 ## 停止
 

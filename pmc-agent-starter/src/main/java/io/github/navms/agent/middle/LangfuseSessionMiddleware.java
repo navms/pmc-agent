@@ -6,11 +6,13 @@ import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentStartEvent;
 import io.agentscope.core.event.ModelCallEndEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ThinkingBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultStartEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.middleware.ActingInput;
 import io.agentscope.core.middleware.AgentInput;
@@ -18,6 +20,8 @@ import io.agentscope.core.middleware.MiddlewareBase;
 import io.agentscope.core.middleware.ModelCallInput;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.util.JsonUtils;
+import io.github.navms.agent.prompt.LangfusePromptRegistry;
+import io.github.navms.agent.prompt.LangfusePromptSnapshot;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.StatusCode;
@@ -49,14 +53,12 @@ public class LangfuseSessionMiddleware implements MiddlewareBase {
 
     private static final String INSTRUMENTATION_NAME = "io.agentscope";
 
-    /**
-     * OTEL / Langfuse 单字段上限，避免超大 prompt 撑爆导出。
-     */
-    private static final int ATTR_MAX_CHARS = 50_000;
-
     private static volatile boolean hookRegistered = false;
 
-    public LangfuseSessionMiddleware() {
+    private final LangfusePromptRegistry promptRegistry;
+
+    public LangfuseSessionMiddleware(LangfusePromptRegistry promptRegistry) {
+        this.promptRegistry = promptRegistry;
         if (!hookRegistered) {
             synchronized (LangfuseSessionMiddleware.class) {
                 if (!hookRegistered) {
@@ -89,11 +91,13 @@ public class LangfuseSessionMiddleware implements MiddlewareBase {
                     .setAttribute("gen_ai.request.messages.count", input.msgs() != null ? (long) input.msgs().size() : 0L)
                     .startSpan();
             applySessionAttributes(span, ctx);
+            applyPromptAttributes(span, agent.getName());
             applyObservationInput(span, serializeMessages(input.msgs()));
 
             Context otelCtx = span.storeInContext(parentContext);
             AtomicReference<Boolean> ended = new AtomicReference<>(false);
             StringBuilder textBuf = new StringBuilder();
+            StringBuilder thinkingBuf = new StringBuilder();
 
             return ContextPropagationOperator.runWithContext(next.apply(input)
                     .doOnNext(event -> {
@@ -101,19 +105,22 @@ public class LangfuseSessionMiddleware implements MiddlewareBase {
                                 && rse.getSource() == null
                                 && rse.getReplyId() != null) {
                             span.setAttribute("agentscope.agent.reply_id", rse.getReplyId());
+                        } else if (event instanceof ThinkingBlockDeltaEvent tbd && tbd.getDelta() != null) {
+                            thinkingBuf.append(tbd.getDelta());
                         } else if (event instanceof TextBlockDeltaEvent tbd && tbd.getDelta() != null) {
                             textBuf.append(tbd.getDelta());
                         }
                     }).doOnComplete(() -> {
                         if (ended.compareAndSet(false, true)) {
-                            if (!textBuf.isEmpty()) {
-                                applyObservationOutput(span, truncate(textBuf.toString()));
-                            }
+                            applyObservationOutput(span, serializeModelOutput(
+                                    textBuf.toString(), thinkingBuf.toString(), List.of()));
                             span.setStatus(StatusCode.OK);
                             span.end();
                         }
                     }).doOnError(e -> {
                         if (ended.compareAndSet(false, true)) {
+                            applyObservationOutput(span, serializeModelOutput(
+                                    textBuf.toString(), thinkingBuf.toString(), List.of()));
                             span.setStatus(StatusCode.ERROR, e.getMessage());
                             span.recordException(e);
                             span.end();
@@ -146,17 +153,21 @@ public class LangfuseSessionMiddleware implements MiddlewareBase {
                     .setAttribute("gen_ai.request.tools.count", input.tools() != null ? (long) input.tools().size() : 0L)
                     .startSpan();
             applySessionAttributes(span, ctx);
+            applyPromptAttributes(span, agent.getName());
             // Langfuse Preview 映射：gen_ai.prompt / langfuse.observation.input
             applyObservationInput(span, serializeMessages(input.messages()));
 
             Context otelCtx = span.storeInContext(parentContext);
             AtomicReference<Boolean> ended = new AtomicReference<>(false);
             StringBuilder textBuf = new StringBuilder();
+            StringBuilder thinkingBuf = new StringBuilder();
             List<Map<String, String>> toolCalls = new ArrayList<>();
 
             return ContextPropagationOperator.runWithContext(next.apply(input)
                     .doOnNext(event -> {
-                        if (event instanceof TextBlockDeltaEvent tbd && tbd.getDelta() != null) {
+                        if (event instanceof ThinkingBlockDeltaEvent tbd && tbd.getDelta() != null) {
+                            thinkingBuf.append(tbd.getDelta());
+                        } else if (event instanceof TextBlockDeltaEvent tbd && tbd.getDelta() != null) {
                             textBuf.append(tbd.getDelta());
                         } else if (event instanceof ToolCallStartEvent tcs) {
                             Map<String, String> call = new LinkedHashMap<>();
@@ -168,13 +179,17 @@ public class LangfuseSessionMiddleware implements MiddlewareBase {
                         }
                     }).doOnComplete(() -> {
                         if (ended.compareAndSet(false, true)) {
-                            applyObservationOutput(span, serializeModelOutput(textBuf.toString(), toolCalls));
+                            applyObservationOutput(
+                                    span,
+                                    serializeModelOutput(textBuf.toString(), thinkingBuf.toString(), toolCalls));
                             span.setStatus(StatusCode.OK);
                             span.end();
                         }
                     }).doOnError(e -> {
                         if (ended.compareAndSet(false, true)) {
-                            applyObservationOutput(span, serializeModelOutput(textBuf.toString(), toolCalls));
+                            applyObservationOutput(
+                                    span,
+                                    serializeModelOutput(textBuf.toString(), thinkingBuf.toString(), toolCalls));
                             span.setStatus(StatusCode.ERROR, e.getMessage());
                             span.recordException(e);
                             span.end();
@@ -208,6 +223,7 @@ public class LangfuseSessionMiddleware implements MiddlewareBase {
                     .setAttribute("gen_ai.tool.call.count", input.toolCalls() != null ? (long) input.toolCalls().size() : 0L)
                     .startSpan();
             applySessionAttributes(span, ctx);
+            applyPromptAttributes(span, agent.getName());
             applyObservationInput(span, serializeToolCalls(input.toolCalls()));
 
             Context otelCtx = span.storeInContext(parentContext);
@@ -270,24 +286,38 @@ public class LangfuseSessionMiddleware implements MiddlewareBase {
         }
     }
 
+    private void applyPromptAttributes(Span span, String agentName) {
+        if (promptRegistry == null || !StringUtils.hasText(agentName)) {
+            return;
+        }
+        promptRegistry.find(agentName).ifPresent(snapshot -> applyPromptSnapshot(span, snapshot));
+    }
+
+    private static void applyPromptSnapshot(Span span, LangfusePromptSnapshot snapshot) {
+        if (StringUtils.hasText(snapshot.name())) {
+            span.setAttribute("langfuse.observation.prompt.name", snapshot.name());
+        }
+        if (snapshot.version() != null) {
+            span.setAttribute("langfuse.observation.prompt.version", (long) snapshot.version());
+        }
+    }
+
     private static void applyObservationInput(Span span, String value) {
         if (!StringUtils.hasText(value)) {
             return;
         }
-        String truncated = truncate(value);
-        span.setAttribute("langfuse.observation.input", truncated);
-        span.setAttribute("gen_ai.prompt", truncated);
-        span.setAttribute("input.value", truncated);
+        span.setAttribute("langfuse.observation.input", value);
+        span.setAttribute("gen_ai.prompt", value);
+        span.setAttribute("input.value", value);
     }
 
     private static void applyObservationOutput(Span span, String value) {
         if (!StringUtils.hasText(value)) {
             return;
         }
-        String truncated = truncate(value);
-        span.setAttribute("langfuse.observation.output", truncated);
-        span.setAttribute("gen_ai.completion", truncated);
-        span.setAttribute("output.value", truncated);
+        span.setAttribute("langfuse.observation.output", value);
+        span.setAttribute("gen_ai.completion", value);
+        span.setAttribute("output.value", value);
     }
 
     private static String serializeMessages(List<Msg> messages) {
@@ -303,53 +333,73 @@ public class LangfuseSessionMiddleware implements MiddlewareBase {
             if (StringUtils.hasText(text)) {
                 row.put("content", text);
             }
+            String thinking = joinThinking(msg);
+            if (StringUtils.hasText(thinking)) {
+                row.put("reasoning", thinking);
+            }
             List<ToolUseBlock> toolUses = msg.getContentBlocks(ToolUseBlock.class);
             if (!CollectionUtils.isEmpty(toolUses)) {
-                List<Map<String, Object>> calls = new ArrayList<>(toolUses.size());
-                for (ToolUseBlock tu : toolUses) {
-                    Map<String, Object> call = new LinkedHashMap<>();
-                    call.put("id", tu.getId());
-                    call.put("name", tu.getName());
-                    call.put("arguments", tu.getInput() != null ? tu.getInput() : Map.of());
-                    calls.add(call);
-                }
-                row.put("tool_calls", calls);
+                row.put("tool_calls", buildToolCalls(toolUses));
             }
             rows.add(row);
         }
         return JsonUtils.getJsonCodec().toJson(rows);
     }
 
-    private static String serializeModelOutput(String text, List<Map<String, String>> toolCalls) {
+    private static List<Map<String, Object>> buildToolCalls(List<ToolUseBlock> toolUses) {
+        List<Map<String, Object>> calls = new ArrayList<>(toolUses.size());
+        for (ToolUseBlock tu : toolUses) {
+            Map<String, Object> call = new LinkedHashMap<>();
+            call.put("id", tu.getId());
+            call.put("name", tu.getName());
+            call.put("arguments", tu.getInput() != null ? tu.getInput() : Map.of());
+            calls.add(call);
+        }
+        return calls;
+    }
+
+    static String serializeModelOutput(String text, String reasoning, List<Map<String, String>> toolCalls) {
         boolean hasText = StringUtils.hasText(text);
+        boolean hasReasoning = StringUtils.hasText(reasoning);
         boolean hasTools = toolCalls != null && !toolCalls.isEmpty();
-        if (!hasText && !hasTools) {
+        if (!hasText && !hasReasoning && !hasTools) {
             return null;
         }
-        if (hasText && !hasTools) {
+        if (hasText && !hasReasoning && !hasTools) {
             return text;
         }
         Map<String, Object> body = new LinkedHashMap<>();
+        if (hasReasoning) {
+            body.put("reasoning", reasoning);
+        }
         if (hasText) {
             body.put("text", text);
         }
-        body.put("tool_calls", toolCalls);
+        if (hasTools) {
+            body.put("tool_calls", toolCalls);
+        }
         return JsonUtils.getJsonCodec().toJson(body);
+    }
+
+    private static String joinThinking(Msg msg) {
+        List<ThinkingBlock> blocks = msg.getContentBlocks(ThinkingBlock.class);
+        if (CollectionUtils.isEmpty(blocks)) {
+            return null;
+        }
+        StringBuilder buf = new StringBuilder();
+        for (ThinkingBlock block : blocks) {
+            if (block != null && StringUtils.hasText(block.getThinking())) {
+                buf.append(block.getThinking());
+            }
+        }
+        return buf.isEmpty() ? null : buf.toString();
     }
 
     private static String serializeToolCalls(List<ToolUseBlock> toolCalls) {
         if (CollectionUtils.isEmpty(toolCalls)) {
             return null;
         }
-        List<Map<String, Object>> rows = new ArrayList<>(toolCalls.size());
-        for (ToolUseBlock tu : toolCalls) {
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("id", tu.getId());
-            row.put("name", tu.getName());
-            row.put("arguments", tu.getInput() != null ? tu.getInput() : Map.of());
-            rows.add(row);
-        }
-        return JsonUtils.getJsonCodec().toJson(rows);
+        return JsonUtils.getJsonCodec().toJson(buildToolCalls(toolCalls));
     }
 
     private static String serializeToolResults(
@@ -394,13 +444,6 @@ public class LangfuseSessionMiddleware implements MiddlewareBase {
             span.setAttribute("gen_ai.usage.input_tokens", usage.getInputTokens());
             span.setAttribute("gen_ai.usage.output_tokens", usage.getOutputTokens());
         }
-    }
-
-    private static String truncate(String s) {
-        if (s == null || s.length() <= ATTR_MAX_CHARS) {
-            return s;
-        }
-        return s.substring(0, ATTR_MAX_CHARS) + "...[truncated, limit=" + ATTR_MAX_CHARS + "]";
     }
 
 }

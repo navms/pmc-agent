@@ -62,6 +62,11 @@
             <artifactId>opentelemetry-exporter-otlp</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.langfuse</groupId>
+            <artifactId>langfuse-java</artifactId>
+            <version>0.3.0</version>
+        </dependency>
+        <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
         </dependency>
