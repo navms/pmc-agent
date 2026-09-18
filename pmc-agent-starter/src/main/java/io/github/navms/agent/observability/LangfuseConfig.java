@@ -52,7 +52,7 @@ public class LangfuseConfig {
     @Bean(name = "langfuseOpenTelemetry")
     public OpenTelemetry langfuseOpenTelemetry(LangfuseProperties properties) {
         OpenTelemetry otel = LangfuseOpenTelemetryInitializer.current();
-        if (properties.isExportEnabled()) {
+        if (properties.isLangfuseEnable()) {
             log.info("Langfuse OTLP export -> {}", properties.otlpTracesEndpoint());
         } else {
             log.info("Langfuse OTLP export disabled");

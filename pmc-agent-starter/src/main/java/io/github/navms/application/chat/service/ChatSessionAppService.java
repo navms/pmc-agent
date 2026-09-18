@@ -1,6 +1,8 @@
 package io.github.navms.application.chat.service;
 
 import io.github.navms.agent.observability.LangfuseDatasetClient;
+import io.github.navms.agent.observability.dataset.Input;
+import io.github.navms.agent.observability.dataset.Metadata;
 import io.github.navms.application.chat.converter.ChatAppConverter;
 import io.github.navms.application.chat.dto.ChatMessageInfo;
 import io.github.navms.application.chat.dto.ChatSessionInfo;
@@ -108,15 +110,8 @@ public class ChatSessionAppService {
         if (!messageExists) {
             throw new BusinessException(ChatErrorCode.MESSAGE_NOT_FOUND);
         }
-        List<Map<String, Object>> messages = rows.stream().map(ChatMessage::toProtocolMessage).toList();
-        Map<String, Object> input = new LinkedHashMap<>();
-        input.put("sessionId", session.getId());
-        input.put("title", session.getTitle() == null ? null : session.getTitle().value());
-        input.put("messages", messages);
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("userId", session.getUserId().value());
-        metadata.put("dislikedMessageId", command.messageId());
-        metadata.put("rating", "down");
+        Input input = Input.from(session, rows);
+        Metadata metadata = Metadata.dislike(session.getUserId().value(), command.messageId());
         String itemId = "pmc-thumbsdown-" + session.getId() + "-" + command.messageId();
         langfuseDatasetClient.upsertBaseCase(itemId, input, metadata);
     }

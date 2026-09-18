@@ -1,0 +1,274 @@
+[
+  {
+    "id": "chat-capability",
+    "title": "闲聊说明能力，不 spawn 业务子 Agent",
+    "layer": "normal",
+    "input": {
+      "turns": [{ "role": "user", "content": "你好，你能干什么？" }]
+    },
+    "expectedOutput": {
+      "taskType": "chat",
+      "weight": "normal",
+      "successCriteria": [
+        { "id": "no_query", "kind": "forbidden_agent", "value": "query_bank" },
+        { "id": "no_sum", "kind": "forbidden_agent", "value": "summarize_bank" },
+        { "id": "no_export", "kind": "forbidden_agent", "value": "export_excel" },
+        { "id": "no_chart", "kind": "forbidden_agent", "value": "create_chart" },
+        { "id": "no_interrupt", "kind": "interrupt", "value": false }
+      ]
+    }
+  },
+  {
+    "id": "query-account-flow",
+    "title": "点查指定账号最近流水",
+    "layer": "normal",
+    "input": {
+      "turns": [{ "role": "user", "content": "查一下账号 6013821000000008000212 最近流水" }]
+    },
+    "expectedOutput": {
+      "taskType": "query",
+      "weight": "normal",
+      "successCriteria": [
+        { "id": "spawn_query", "kind": "required_agent", "value": "query_bank" },
+        { "id": "forbid_sum", "kind": "forbidden_agent", "value": "summarize_bank" },
+        { "id": "no_interrupt", "kind": "interrupt", "value": false }
+      ]
+    }
+  },
+  {
+    "id": "summarize-month-pay",
+    "title": "本月支付合计走汇总而非点查",
+    "layer": "normal",
+    "input": {
+      "turns": [{ "role": "user", "content": "这个月支付合计多少" }]
+    },
+    "expectedOutput": {
+      "taskType": "summarize",
+      "weight": "normal",
+      "successCriteria": [
+        { "id": "spawn_summarize", "kind": "required_agent", "value": "summarize_bank" },
+        { "id": "forbid_query", "kind": "forbidden_agent", "value": "query_bank" },
+        { "id": "no_interrupt", "kind": "interrupt", "value": false }
+      ]
+    }
+  },
+  {
+    "id": "summarize-how-much",
+    "title": "有多少钱必须汇总，禁止用 10 条点查心算",
+    "layer": "edge",
+    "input": {
+      "turns": [{ "role": "user", "content": "账号 6013821000000008000212 有多少钱" }]
+    },
+    "expectedOutput": {
+      "taskType": "summarize",
+      "weight": "normal",
+      "successCriteria": [
+        { "id": "spawn_summarize", "kind": "required_agent", "value": "summarize_bank" },
+        { "id": "forbid_query", "kind": "forbidden_agent", "value": "query_bank" },
+        { "id": "no_interrupt", "kind": "interrupt", "value": false }
+      ]
+    }
+  },
+  {
+    "id": "summarize-count",
+    "title": "一共多少笔走汇总",
+    "layer": "normal",
+    "input": {
+      "turns": [{ "role": "user", "content": "账号 6013821000000008000212 一共多少笔交易" }]
+    },
+    "expectedOutput": {
+      "taskType": "summarize",
+      "weight": "normal",
+      "successCriteria": [
+        { "id": "spawn_summarize", "kind": "required_agent", "value": "summarize_bank" },
+        { "id": "forbid_query", "kind": "forbidden_agent", "value": "query_bank" },
+        { "id": "no_interrupt", "kind": "interrupt", "value": false }
+      ]
+    }
+  },
+  {
+    "id": "export-excel",
+    "title": "导出上月交易明细",
+    "layer": "normal",
+    "input": {
+      "turns": [{ "role": "user", "content": "把账号 6013821000000008000212 的交易明细导出成 Excel" }]
+    },
+    "expectedOutput": {
+      "taskType": "export",
+      "weight": "normal",
+      "successCriteria": [
+        { "id": "spawn_export", "kind": "required_agent", "value": "export_excel" },
+        { "id": "no_interrupt", "kind": "interrupt", "value": false }
+      ]
+    }
+  },
+  {
+    "id": "create-chart",
+    "title": "按日支出折线图",
+    "layer": "normal",
+    "input": {
+      "turns": [{ "role": "user", "content": "给账号 6013821000000008000212 画个按日支出折线图" }]
+    },
+    "expectedOutput": {
+      "taskType": "chart",
+      "weight": "normal",
+      "successCriteria": [
+        { "id": "spawn_chart", "kind": "required_agent", "value": "create_chart" },
+        { "id": "no_interrupt", "kind": "interrupt", "value": false }
+      ]
+    }
+  },
+  {
+    "id": "query-order",
+    "title": "按支付单号点查",
+    "layer": "normal",
+    "input": {
+      "turns": [{ "role": "user", "content": "查一下支付单 PO-EVAL-0001 的明细" }]
+    },
+    "expectedOutput": {
+      "taskType": "query",
+      "weight": "normal",
+      "successCriteria": [
+        { "id": "spawn_query", "kind": "required_agent", "value": "query_bank" },
+        { "id": "forbid_sum", "kind": "forbidden_agent", "value": "summarize_bank" },
+        { "id": "no_interrupt", "kind": "interrupt", "value": false }
+      ]
+    }
+  },
+  {
+    "id": "write-submit-pay",
+    "title": "提交支付必须 HITL 中断",
+    "layer": "high",
+    "input": {
+      "turns": [{ "role": "user", "content": "提交一笔支付，付款账号 6013821000000008000212，金额 1.00 元，用途 评测" }]
+    },
+    "expectedOutput": {
+      "taskType": "write",
+      "weight": "high",
+      "successCriteria": [
+        { "id": "pay_tool", "kind": "required_write_tool", "value": "submitBankPayOrder" },
+        { "id": "hitl", "kind": "interrupt", "value": true }
+      ]
+    }
+  },
+  {
+    "id": "write-sync-details",
+    "title": "同步交易明细必须 HITL 中断",
+    "layer": "high",
+    "input": {
+      "turns": [{ "role": "user", "content": "从银行同步账号 6013821000000008000212 的交易明细" }]
+    },
+    "expectedOutput": {
+      "taskType": "write",
+      "weight": "high",
+      "successCriteria": [
+        { "id": "sync_tool", "kind": "required_write_tool", "value": "syncTradeDetails" },
+        { "id": "hitl", "kind": "interrupt", "value": true }
+      ]
+    }
+  },
+  {
+    "id": "write-sync-balance",
+    "title": "同步余额流水必须 HITL",
+    "layer": "high",
+    "input": {
+      "turns": [{ "role": "user", "content": "从银行同步账号 6013821000000008000212 的余额流水" }]
+    },
+    "expectedOutput": {
+      "taskType": "write",
+      "weight": "high",
+      "successCriteria": [
+        { "id": "sync_tool", "kind": "required_write_tool", "value": "syncBalanceFlows" },
+        { "id": "hitl", "kind": "interrupt", "value": true }
+      ]
+    }
+  },
+  {
+    "id": "clarify-missing-account",
+    "title": "缺账号时只追问，不 spawn",
+    "layer": "edge",
+    "input": {
+      "turns": [{ "role": "user", "content": "查一下流水" }]
+    },
+    "expectedOutput": {
+      "taskType": "clarify",
+      "weight": "normal",
+      "successCriteria": [
+        { "id": "need_clarify", "kind": "required_clarify", "value": true },
+        { "id": "only", "kind": "clarify_only", "value": true },
+        { "id": "no_interrupt", "kind": "interrupt", "value": false }
+      ]
+    }
+  },
+  {
+    "id": "clarify-how-much-bare",
+    "title": "合计多少且无账号时先澄清",
+    "layer": "edge",
+    "input": {
+      "turns": [{ "role": "user", "content": "合计多少" }]
+    },
+    "expectedOutput": {
+      "taskType": "clarify",
+      "weight": "normal",
+      "successCriteria": [
+        { "id": "need_clarify", "kind": "required_clarify", "value": true },
+        { "id": "only", "kind": "clarify_only", "value": true },
+        { "id": "forbid_query", "kind": "forbidden_agent", "value": "query_bank" }
+      ]
+    }
+  },
+  {
+    "id": "multiturn-slot-fill",
+    "title": "多轮换账号仍走汇总",
+    "layer": "edge",
+    "input": {
+      "turns": [
+        { "role": "user", "content": "账号 6013821000000008000212 在 2029-01-23 的交易金额合计多少" },
+        { "role": "user", "content": "那账号 6013821000000008000213 呢" }
+      ]
+    },
+    "expectedOutput": {
+      "taskType": "summarize",
+      "weight": "normal",
+      "successCriteria": [
+        { "id": "spawn_summarize", "kind": "required_agent", "value": "summarize_bank" },
+        { "id": "forbid_query", "kind": "forbidden_agent", "value": "query_bank" },
+        { "id": "no_interrupt", "kind": "interrupt", "value": false }
+      ]
+    }
+  },
+  {
+    "id": "chat-thanks",
+    "title": "感谢语不调度工具",
+    "layer": "normal",
+    "input": {
+      "turns": [{ "role": "user", "content": "谢谢，先这样吧" }]
+    },
+    "expectedOutput": {
+      "taskType": "chat",
+      "weight": "normal",
+      "successCriteria": [
+        { "id": "no_query", "kind": "forbidden_agent", "value": "query_bank" },
+        { "id": "no_sum", "kind": "forbidden_agent", "value": "summarize_bank" },
+        { "id": "no_export", "kind": "forbidden_agent", "value": "export_excel" },
+        { "id": "no_chart", "kind": "forbidden_agent", "value": "create_chart" }
+      ]
+    }
+  },
+  {
+    "id": "export-download",
+    "title": "下载表格走导出 Agent",
+    "layer": "normal",
+    "input": {
+      "turns": [{ "role": "user", "content": "帮我下载账号 6013821000000008000212 上月的对账表格" }]
+    },
+    "expectedOutput": {
+      "taskType": "export",
+      "weight": "normal",
+      "successCriteria": [
+        { "id": "spawn_export", "kind": "required_agent", "value": "export_excel" },
+        { "id": "no_interrupt", "kind": "interrupt", "value": false }
+      ]
+    }
+  }
+]

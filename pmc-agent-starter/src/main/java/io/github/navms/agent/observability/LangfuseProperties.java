@@ -56,9 +56,9 @@ public class LangfuseProperties {
     private String baseCaseDataset = "base-case";
 
     /**
-     * @return 开关打开且密钥齐全时才导出
+     * @return Langfuse 是否可用
      */
-    public boolean isExportEnabled() {
+    public boolean isLangfuseEnable() {
         return enabled && StringUtils.hasText(host) && StringUtils.hasText(publicKey) && StringUtils.hasText(secretKey);
     }
 

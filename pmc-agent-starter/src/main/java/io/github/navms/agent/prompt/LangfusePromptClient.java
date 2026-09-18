@@ -89,7 +89,7 @@ public class LangfusePromptClient {
     }
 
     private LangfuseClient clientOrNull() {
-        if (!properties.isExportEnabled()) {
+        if (!properties.isLangfuseEnable()) {
             return null;
         }
         return langfuseClient.getIfAvailable();

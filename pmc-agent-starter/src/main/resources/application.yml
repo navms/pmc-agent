@@ -37,6 +37,16 @@ pmc:
     prompt-cache-ttl-seconds: ${LANGFUSE_PROMPT_CACHE_TTL:60}
     prompt-seed: ${LANGFUSE_PROMPT_SEED:true}
     base-case-dataset: ${LANGFUSE_BASE_CASE_DATASET:base-case}
+  eval:
+    enabled: ${PMC_EVAL_ENABLED:true}
+    dataset: ${PMC_EVAL_DATASET:golden-case}
+    run-name: ${PMC_EVAL_RUN_NAME:}
+    max-items: ${PMC_EVAL_MAX_ITEMS:0}
+    timeout-seconds: ${PMC_EVAL_TIMEOUT:180}
+    trials: ${PMC_EVAL_TRIALS:1}
+    hitl-resume: ${PMC_EVAL_HITL_RESUME:approve}
+    output-dir: ${PMC_EVAL_OUTPUT_DIR:./data/eval}
+    user-id: ${PMC_EVAL_USER_ID:eval-harness}
 
 agentscope:
   agui:

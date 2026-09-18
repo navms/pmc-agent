@@ -1,6 +1,8 @@
 package io.github.navms.application.chat.service;
 
 import io.github.navms.agent.observability.LangfuseDatasetClient;
+import io.github.navms.agent.observability.dataset.Input;
+import io.github.navms.agent.observability.dataset.Metadata;
 import io.github.navms.application.chat.dto.DislikeSessionCommand;
 import io.github.navms.domain.chat.entity.ChatMessage;
 import io.github.navms.domain.chat.entity.ChatSession;
@@ -64,22 +66,20 @@ class ChatSessionAppServiceDislikeTest {
         service.dislike(new DislikeSessionCommand(9L, "m-assistant", "down"));
 
         ArgumentCaptor<String> idCaptor = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<Object> inputCaptor = ArgumentCaptor.forClass(Object.class);
-        ArgumentCaptor<Object> metadataCaptor = ArgumentCaptor.forClass(Object.class);
+        ArgumentCaptor<Input> inputCaptor = ArgumentCaptor.forClass(Input.class);
+        ArgumentCaptor<Metadata> metadataCaptor = ArgumentCaptor.forClass(Metadata.class);
         verify(langfuseDatasetClient).upsertBaseCase(idCaptor.capture(), inputCaptor.capture(), metadataCaptor.capture());
         assertEquals("pmc-thumbsdown-9-m-assistant", idCaptor.getValue());
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> input = (Map<String, Object>) inputCaptor.getValue();
-        assertEquals(9L, input.get("sessionId"));
-        assertEquals("查流水", input.get("title"));
-        assertEquals(2, ((List<?>) input.get("messages")).size());
+        Input input = inputCaptor.getValue();
+        assertEquals(9L, input.sessionId());
+        assertEquals("查流水", input.title());
+        assertEquals(2, input.messages().size());
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> metadata = (Map<String, Object>) metadataCaptor.getValue();
-        assertEquals("user-1", metadata.get("userId"));
-        assertEquals("m-assistant", metadata.get("dislikedMessageId"));
-        assertEquals("down", metadata.get("rating"));
+        Metadata metadata = metadataCaptor.getValue();
+        assertEquals("user-1", metadata.userId());
+        assertEquals("m-assistant", metadata.dislikedMessageId());
+        assertEquals("down", metadata.rating());
     }
 
     @Test

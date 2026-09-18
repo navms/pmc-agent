@@ -72,7 +72,7 @@ public class LangfusePromptService {
     }
 
     private LangfusePromptSnapshot fetchOrSeed(Prompt prompt) {
-        if (!properties.isExportEnabled()) {
+        if (!properties.isLangfuseEnable()) {
             return null;
         }
         String label = properties.getPromptLabel();
