@@ -29,8 +29,11 @@ public class WebExceptionHandler {
      * @return HTTP 状态
      */
     public static HttpStatus statusOf(ChatErrorCode code) {
-        if (code == ChatErrorCode.SESSION_NOT_FOUND) {
+        if (code == ChatErrorCode.SESSION_NOT_FOUND || code == ChatErrorCode.MESSAGE_NOT_FOUND) {
             return HttpStatus.NOT_FOUND;
+        }
+        if (code == ChatErrorCode.LANGFUSE_UNAVAILABLE) {
+            return HttpStatus.SERVICE_UNAVAILABLE;
         }
         return HttpStatus.BAD_REQUEST;
     }

@@ -51,6 +51,11 @@ public class LangfuseProperties {
     private boolean promptSeed = true;
 
     /**
+     * 点踩写入的 Langfuse Dataset 名（base case）。
+     */
+    private String baseCaseDataset = "base-case";
+
+    /**
      * @return 开关打开且密钥齐全时才导出
      */
     public boolean isExportEnabled() {

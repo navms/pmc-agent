@@ -1,9 +1,11 @@
 package io.github.navms.web.agent;
 
+import io.github.navms.application.chat.dto.DislikeSessionCommand;
 import io.github.navms.application.chat.service.ChatSessionAppService;
 import io.github.navms.web.agent.converter.ChatWebConverter;
 import io.github.navms.web.agent.param.CreateSessionRequest;
 import io.github.navms.web.agent.param.RenameSessionRequest;
+import io.github.navms.web.agent.param.SessionFeedbackRequest;
 import io.github.navms.web.agent.vo.ChatMessageVO;
 import io.github.navms.web.agent.vo.ChatSessionVO;
 import org.springframework.http.HttpStatus;
@@ -81,5 +83,20 @@ public class ChatSessionController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long sessionId) {
         chatSessionAppService.softDelete(sessionId);
+    }
+
+    /**
+     * 点踩：将本次会话写入 Langfuse Dataset。
+     *
+     * @param sessionId 会话 ID
+     * @param request   被踩消息
+     */
+    @PostMapping("/{sessionId}/feedback")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void feedback(@PathVariable Long sessionId, @RequestBody SessionFeedbackRequest request) {
+        chatSessionAppService.dislike(new DislikeSessionCommand(
+                sessionId,
+                request == null ? null : request.messageId(),
+                request == null ? null : request.rating()));
     }
 }

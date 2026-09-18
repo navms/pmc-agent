@@ -36,3 +36,15 @@ export async function deleteSession(sessionId: number): Promise<void> {
     throw new Error('无法删除会话')
   }
 }
+
+export async function submitSessionFeedback(sessionId: number, messageId: string): Promise<void> {
+  const response = await fetch(`/sessions/${sessionId}/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messageId, rating: 'down' }),
+  })
+  if (!response.ok && response.status !== 204) {
+    const detail = (await response.text()).trim()
+    throw new Error(detail || '无法提交反馈')
+  }
+}

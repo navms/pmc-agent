@@ -27,7 +27,7 @@ pmc:
     export-dir: ${PMC_EXPORT_DIR:./data/exports}
   agent:
     api-key: ${AI_DASHSCOPE_API_KEY:sk-ws-H.PDXIEXY.11Ic.MEUCIQDhk2CvtVh6XoDh5UTpAPLpA1QgM5vjf6Aj4ruFzeLoSAIgJ945-S-kf3L7p404sy06SZHPuqDzC1B-ivz26CR8vHM}
-    model: ${AI_MODEL:qwen3.7-flash}
+    model: ${AI_MODEL:qwen3.7-flash-2026-07-15}
   langfuse:
     enabled: ${LANGFUSE_ENABLED:true}
     host: ${LANGFUSE_HOST:http://127.0.0.1:3000}
@@ -36,6 +36,7 @@ pmc:
     prompt-label: ${LANGFUSE_PROMPT_LABEL:production}
     prompt-cache-ttl-seconds: ${LANGFUSE_PROMPT_CACHE_TTL:60}
     prompt-seed: ${LANGFUSE_PROMPT_SEED:true}
+    base-case-dataset: ${LANGFUSE_BASE_CASE_DATASET:base-case}
 
 agentscope:
   agui:

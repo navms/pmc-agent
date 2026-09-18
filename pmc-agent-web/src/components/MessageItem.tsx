@@ -14,7 +14,10 @@ interface MessageItemProps {
   streaming?: boolean
   showConfirm?: boolean
   confirmDisabled?: boolean
+  disliked?: boolean
+  disliking?: boolean
   onConfirm?: (approved: boolean) => void
+  onDislike?: (messageId: string) => void
 }
 
 export function MessageItem({
@@ -24,7 +27,10 @@ export function MessageItem({
   streaming = false,
   showConfirm = false,
   confirmDisabled = false,
+  disliked = false,
+  disliking = false,
   onConfirm,
+  onDislike,
 }: MessageItemProps) {
   try {
     return renderMessage(message, {
@@ -33,7 +39,10 @@ export function MessageItem({
       streaming,
       showConfirm,
       confirmDisabled,
+      disliked,
+      disliking,
       onConfirm,
+      onDislike,
     })
   } catch (error) {
     console.error('MessageItem render failed', message.id, error)
@@ -63,6 +72,9 @@ function renderMessage(
         turnUsage={options.turnUsage}
         nested={options.nested}
         streaming={options.streaming}
+        disliked={options.disliked}
+        disliking={options.disliking}
+        onDislike={options.onDislike}
       />
     )
   }

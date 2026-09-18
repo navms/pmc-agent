@@ -9,10 +9,23 @@ interface MessageListProps {
   messages: Message[]
   status: ChatStatus
   streamingIds: Set<string>
+  clarifying?: boolean
+  dislikedIds: Set<string>
+  dislikingId: string | null
   onConfirm: (approved: boolean) => void
+  onDislike: (messageId: string) => void
 }
 
-export function MessageList({ messages, status, streamingIds, onConfirm }: MessageListProps) {
+export function MessageList({
+  messages,
+  status,
+  streamingIds,
+  clarifying = false,
+  dislikedIds,
+  dislikingId,
+  onConfirm,
+  onDislike,
+}: MessageListProps) {
   const items = groupMessagesForRender(messages)
   const usageForIndex = (index: number) =>
     isLastAssistantOfTurn(messages, index) ? usageForTurn(messages, index) : undefined
@@ -31,7 +44,10 @@ export function MessageList({ messages, status, streamingIds, onConfirm }: Messa
                 streaming={streamingIds.has(message.id)}
                 showConfirm={isLastConfirm}
                 confirmDisabled={status === 'streaming'}
+                disliked={dislikedIds.has(message.id)}
+                disliking={dislikingId === message.id}
                 onConfirm={onConfirm}
+                onDislike={onDislike}
               />
             </div>
           )
@@ -47,10 +63,19 @@ export function MessageList({ messages, status, streamingIds, onConfirm }: Messa
             children={item.children}
             usageForIndex={usageForIndex}
             streamingIds={streamingIds}
+            dislikedIds={dislikedIds}
+            dislikingId={dislikingId}
+            onDislike={onDislike}
             defaultOpen={hasStreamingChild || status === 'streaming'}
           />
         )
       })}
+      {clarifying ? (
+        <div className="clarify-loading" role="status" aria-live="polite">
+          <span className="clarify-loading__dot" aria-hidden />
+          正在进行意图澄清…
+        </div>
+      ) : null}
     </div>
   )
 }

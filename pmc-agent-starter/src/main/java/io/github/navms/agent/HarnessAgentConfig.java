@@ -1,6 +1,7 @@
 package io.github.navms.agent;
 
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.ToolkitConfig;
@@ -14,6 +15,7 @@ import io.agentscope.harness.agent.memory.compaction.CompactionConfig;
 import io.agentscope.harness.agent.memory.compaction.ToolResultEvictionConfig;
 import io.agentscope.harness.agent.subagent.SubagentDeclaration;
 import io.agentscope.spring.boot.agui.common.AguiAgentId;
+import io.github.navms.agent.clarify.IntentClarifyMiddleware;
 import io.github.navms.agent.hitl.WritePermissionResumeMiddleware;
 import io.github.navms.agent.middle.LangfuseSessionMiddleware;
 import io.github.navms.agent.permission.Permissions;
@@ -76,6 +78,34 @@ public class HarnessAgentConfig {
         return new LangfuseSessionMiddleware(promptRegistry);
     }
 
+    /**
+     * 意图澄清专用 Agent：结构化输出 + Langfuse 观测，不注册为 AG-UI 入口。
+     *
+     * @param chatModel                 模型
+     * @param promptService             prompt
+     * @param langfuseSessionMiddleware 追踪
+     * @return clarifier
+     */
+    @Bean
+    public ReActAgent intentClarifyAgent(
+            Model chatModel,
+            LangfusePromptService promptService,
+            LangfuseSessionMiddleware langfuseSessionMiddleware) {
+        ReActAgent agent = ReActAgent.builder()
+                .name("intent_clarify")
+                .description("用户意图澄清与任务改写")
+                .sysPrompt(promptService.compile(Prompt.INTENT_CLARIFY))
+                .model(chatModel)
+                .toolkit(new Toolkit(ToolkitConfig.builder().parallel(false).build()))
+                .maxIters(4)
+                .generateOptions(GenerateOptions.builder().temperature(0.0).maxTokens(512).build())
+                .permissionContext(Permissions.bypassPermissions())
+                .middleware(langfuseSessionMiddleware)
+                .build();
+        log.info("ReActAgent intent_clarify ready, model={}", chatModel.getModelName());
+        return agent;
+    }
+
     @Bean
     @AguiAgentId("pmc_supervisor")
     public HarnessAgent supervisorAgent(
@@ -89,7 +119,8 @@ public class HarnessAgentConfig {
             ExcelExportTools excelExportTools,
             ChartTools chartTools,
             BankWriteTools bankWriteTools,
-            WritePermissionResumeMiddleware writePermissionResumeMiddleware) {
+            WritePermissionResumeMiddleware writePermissionResumeMiddleware,
+            IntentClarifyMiddleware intentClarifyMiddleware) {
         Toolkit toolkit = new Toolkit(ToolkitConfig.builder().parallel(false).build());
         toolkit.registerTool(bankWriteTools);
 
@@ -111,9 +142,12 @@ public class HarnessAgentConfig {
                                 .build())
                         .build())
                 .memory(MemoryConfig.builder().build())
+                .disableMemoryHooks()
+                .disableMemoryTools()
                 .toolResultEviction(ToolResultEvictionConfig.defaults())
                 .middleware(langfuseSessionMiddleware)
                 .middleware(writePermissionResumeMiddleware)
+                .middleware(intentClarifyMiddleware)
                 .permissionContext(Permissions.askPermissions(List.of(
                         "submitBankPayOrder",
                         "syncTradeDetails",
@@ -122,11 +156,12 @@ public class HarnessAgentConfig {
                         "syncElectronicStatements")))
                 .subagent(getSubagentDeclaration("query_bank", """
                         点查银行账户、支付单、支付明细、交易明细、电子回单、余额流水、电子对账单。
-                        适用于查某一账户、某一单号、最近几笔明细。最多返回 10 条，不适合汇总或导出。
+                        适用于查某一账户、某一单号、最近几笔明细。最多返回 10 条。
+                        不适合“有多少钱”“合计”“一共多少笔”等聚合问题。
                         """, promptService.compile(Prompt.QUERY_BANK)))
                 .subagent(getSubagentDeclaration("summarize_bank", """
                         对交易明细、支付单、支付明细单、账户、电子回单、电子对账单做 SQL 汇总：合计金额、笔数、按账号/日/月/状态等分组。
-                        适用于“一共多少”“合计”“占比”“按月统计”。
+                        适用于“一共多少”“有多少钱”“合计”“占比”“按月统计”。不要用来点查少量明细。
                         """, promptService.compile(Prompt.SUMMARIZE_BANK)))
                 .subagent(getSubagentDeclaration("export_excel", """
                         将账户、交易明细、支付单或汇总结果导出为 Excel，返回下载地址。

@@ -10,13 +10,33 @@ export function AssistantBubble({
   turnUsage,
   nested = false,
   streaming = false,
+  disliked = false,
+  disliking = false,
+  onDislike,
 }: {
   message: AssistantMessage
   turnUsage?: TokenUsage
   nested?: boolean
   streaming?: boolean
+  disliked?: boolean
+  disliking?: boolean
+  onDislike?: (messageId: string) => void
 }) {
   const text = textContent(message)
+  const showDislike = !streaming && Boolean(onDislike)
+  const dislikeBar = showDislike ? (
+    <div className="bubble-actions">
+      <button
+        type="button"
+        className={`bubble-action${disliked ? ' is-active' : ''}`}
+        disabled={disliked || disliking}
+        aria-label="踩"
+        onClick={() => onDislike?.(message.id)}
+      >
+        {disliking ? '提交中' : disliked ? '已踩' : '踩'}
+      </button>
+    </div>
+  ) : null
   return (
     <div>
       {message.toolCalls?.length ? <ToolCallsBlock message={message} nested={nested} /> : null}
@@ -26,10 +46,14 @@ export function AssistantBubble({
             <MarkdownBody text={text || (streaming ? '…' : '')} />
           </div>
           {turnUsage ? <div className="bubble-usage">{formatTurnUsage(turnUsage)}</div> : null}
+          {dislikeBar}
         </article>
-      ) : turnUsage ? (
-        <div className="bubble-usage">{formatTurnUsage(turnUsage)}</div>
-      ) : null}
+      ) : (
+        <>
+          {turnUsage ? <div className="bubble-usage">{formatTurnUsage(turnUsage)}</div> : null}
+          {dislikeBar}
+        </>
+      )}
     </div>
   )
 }

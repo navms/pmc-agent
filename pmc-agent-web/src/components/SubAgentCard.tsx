@@ -9,6 +9,9 @@ interface SubAgentCardProps {
   children: Array<{ message: Message; index: number }>
   usageForIndex: (index: number) => TokenUsage | undefined
   streamingIds: Set<string>
+  dislikedIds: Set<string>
+  dislikingId: string | null
+  onDislike: (messageId: string) => void
   defaultOpen?: boolean
 }
 
@@ -17,6 +20,9 @@ export function SubAgentCard({
   children,
   usageForIndex,
   streamingIds,
+  dislikedIds,
+  dislikingId,
+  onDislike,
   defaultOpen = true,
 }: SubAgentCardProps) {
   const [open, setOpen] = useState(defaultOpen)
@@ -53,6 +59,9 @@ export function SubAgentCard({
                 turnUsage={usageForIndex(index)}
                 nested
                 streaming={streamingIds.has(message.id)}
+                disliked={dislikedIds.has(message.id)}
+                disliking={dislikingId === message.id}
+                onDislike={onDislike}
               />
             </div>
           ))}

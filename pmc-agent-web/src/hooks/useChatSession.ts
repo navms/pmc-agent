@@ -13,10 +13,12 @@ export function useChatSession(userId: string) {
   const [status, setStatus] = useState<ChatStatus>('idle')
   const [error, setError] = useState<string | null>(null)
   const [streamingIds, setStreamingIds] = useState<Set<string>>(new Set())
+  const [clarifying, setClarifying] = useState(false)
   const agentRef = useRef<HttpAgent | null>(null)
   const messagesRef = useRef<Message[]>([])
   const statusRef = useRef<ChatStatus>('idle')
   const streamingRef = useRef<Set<string>>(new Set())
+  const clarifyingRef = useRef(false)
   const rafRef = useRef<number | null>(null)
 
   const publish = useCallback((nextMessages: Message[], nextStatus: ChatStatus) => {
@@ -30,6 +32,7 @@ export function useChatSession(userId: string) {
       setMessages(messagesRef.current)
       setStatus(statusRef.current)
       setStreamingIds(new Set(streamingRef.current))
+      setClarifying(clarifyingRef.current)
     })
   }, [])
 
@@ -41,12 +44,14 @@ export function useChatSession(userId: string) {
     setMessages(messagesRef.current)
     setStatus(statusRef.current)
     setStreamingIds(new Set(streamingRef.current))
+    setClarifying(clarifyingRef.current)
   }, [])
 
   const stop = useCallback(() => {
     agentRef.current?.abortRun()
     agentRef.current = null
     streamingRef.current = new Set()
+    clarifyingRef.current = false
     if (statusRef.current === 'streaming') {
       statusRef.current = 'idle'
     }
@@ -59,6 +64,7 @@ export function useChatSession(userId: string) {
       setError(null)
       setSessionId(nextSessionId)
       streamingRef.current = new Set()
+      clarifyingRef.current = false
       if (nextSessionId == null) {
         messagesRef.current = []
         statusRef.current = 'idle'
@@ -78,8 +84,10 @@ export function useChatSession(userId: string) {
     async (agent: HttpAgent, resume?: ResumeEntry[]) => {
       agentRef.current = agent
       const scratch = createSubAgentScratch()
+      clarifyingRef.current = false
       statusRef.current = 'streaming'
       setStatus('streaming')
+      setClarifying(false)
 
       const markStreaming = (id: string, on: boolean) => {
         const next = new Set(streamingRef.current)
@@ -109,6 +117,16 @@ export function useChatSession(userId: string) {
           markStreaming(event.messageId, false)
         },
         onCustomEvent: ({ event }) => {
+          if (event.name === 'intent_clarify.start') {
+            clarifyingRef.current = true
+            publish(messagesRef.current, statusRef.current)
+            return
+          }
+          if (event.name === 'intent_clarify.end') {
+            clarifyingRef.current = false
+            publish(messagesRef.current, statusRef.current)
+            return
+          }
           const next = applyCustomEvent(event, messagesRef.current, scratch)
           const last = next.at(-1)
           publish(next, isConfirmActivity(last) ? 'awaiting_confirm' : statusRef.current)
@@ -118,6 +136,7 @@ export function useChatSession(userId: string) {
         },
         onRunFinishedEvent: (params) => {
           streamingRef.current = new Set()
+          clarifyingRef.current = false
           if (params.outcome === 'interrupt') {
             // Prefer official RUN_FINISHED interrupts so resume ids match backend pending.
             const withoutConfirm = messagesRef.current.filter((item) => !isConfirmActivity(item))
@@ -134,6 +153,7 @@ export function useChatSession(userId: string) {
         },
         onRunErrorEvent: () => {
           streamingRef.current = new Set()
+          clarifyingRef.current = false
           publish(messagesRef.current, 'error')
         },
       }
@@ -146,6 +166,7 @@ export function useChatSession(userId: string) {
         })
         if (statusRef.current === 'streaming') {
           streamingRef.current = new Set()
+          clarifyingRef.current = false
           publish(messagesRef.current, 'idle')
         }
         flush()
@@ -177,6 +198,7 @@ export function useChatSession(userId: string) {
         }
         setError(err instanceof Error ? err.message : '生成失败，请重试')
         streamingRef.current = new Set()
+        clarifyingRef.current = false
         statusRef.current = 'error'
         flush()
       }
@@ -209,6 +231,7 @@ export function useChatSession(userId: string) {
           return
         }
         setError(err instanceof Error ? err.message : '恢复失败，请重试')
+        clarifyingRef.current = false
         statusRef.current = 'error'
         flush()
       }
@@ -216,7 +239,7 @@ export function useChatSession(userId: string) {
     [consume, flush, stop, userId],
   )
 
-  return { sessionId, messages, status, error, streamingIds, load, send, resume, stop }
+  return { sessionId, messages, status, error, streamingIds, clarifying, load, send, resume, stop }
 }
 
 function confirmActivity(interrupts: Interrupt[]): ActivityMessage {

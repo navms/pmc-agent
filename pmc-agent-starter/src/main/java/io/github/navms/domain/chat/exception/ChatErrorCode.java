@@ -12,7 +12,10 @@ public enum ChatErrorCode {
 
     SESSION_NOT_FOUND("session not found"),
     TITLE_REQUIRED("title cannot be empty"),
-    UNSUPPORTED_MESSAGE_TYPE("unsupported message type");
+    UNSUPPORTED_MESSAGE_TYPE("unsupported message type"),
+    MESSAGE_NOT_FOUND("message not found"),
+    INVALID_FEEDBACK("invalid feedback"),
+    LANGFUSE_UNAVAILABLE("Langfuse is unavailable");
 
     private final String message;
 

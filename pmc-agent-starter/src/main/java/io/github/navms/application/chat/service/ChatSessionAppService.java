@@ -1,12 +1,16 @@
 package io.github.navms.application.chat.service;
 
+import io.github.navms.agent.observability.LangfuseDatasetClient;
 import io.github.navms.application.chat.converter.ChatAppConverter;
 import io.github.navms.application.chat.dto.ChatMessageInfo;
 import io.github.navms.application.chat.dto.ChatSessionInfo;
 import io.github.navms.application.chat.dto.CreateSessionCommand;
+import io.github.navms.application.chat.dto.DislikeSessionCommand;
 import io.github.navms.application.chat.dto.RenameSessionCommand;
 import io.github.navms.domain.chat.entity.ChatMessage;
 import io.github.navms.domain.chat.entity.ChatSession;
+import io.github.navms.domain.chat.exception.BusinessException;
+import io.github.navms.domain.chat.exception.ChatErrorCode;
 import io.github.navms.domain.chat.repository.ChatMessageRepository;
 import io.github.navms.domain.chat.repository.ChatSessionRepository;
 import io.github.navms.domain.chat.valueobj.SessionTitle;
@@ -14,6 +18,7 @@ import io.github.navms.domain.chat.valueobj.UserId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.util.StringUtils;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -34,6 +39,8 @@ public class ChatSessionAppService {
     private final ChatMessageRepository messageRepository;
 
     private final TransactionTemplate transactionTemplate;
+
+    private final LangfuseDatasetClient langfuseDatasetClient;
 
     /**
      * @param command 创建命令
@@ -84,6 +91,34 @@ public class ChatSessionAppService {
             sessionRepository.requireById(sessionId);
             sessionRepository.deleteById(sessionId);
         });
+    }
+
+    /**
+     * 将本次会话写入 Langfuse Dataset（base case）。
+     *
+     * @param command 点踩命令
+     */
+    public void dislike(DislikeSessionCommand command) {
+        if (command == null || !StringUtils.hasText(command.messageId()) || !"down".equalsIgnoreCase(command.rating())) {
+            throw new BusinessException(ChatErrorCode.INVALID_FEEDBACK);
+        }
+        ChatSession session = sessionRepository.requireById(command.sessionId());
+        List<ChatMessage> rows = messageRepository.listBySessionId(session.getId());
+        boolean messageExists = rows.stream().anyMatch(row -> command.messageId().equals(String.valueOf(row.getMessage().get("id"))));
+        if (!messageExists) {
+            throw new BusinessException(ChatErrorCode.MESSAGE_NOT_FOUND);
+        }
+        List<Map<String, Object>> messages = rows.stream().map(ChatMessage::toProtocolMessage).toList();
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("sessionId", session.getId());
+        input.put("title", session.getTitle() == null ? null : session.getTitle().value());
+        input.put("messages", messages);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("userId", session.getUserId().value());
+        metadata.put("dislikedMessageId", command.messageId());
+        metadata.put("rating", "down");
+        String itemId = "pmc-thumbsdown-" + session.getId() + "-" + command.messageId();
+        langfuseDatasetClient.upsertBaseCase(itemId, input, metadata);
     }
 
     /**

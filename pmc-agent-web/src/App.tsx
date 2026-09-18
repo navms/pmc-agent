@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { submitSessionFeedback } from './api/sessions'
 import { Composer } from './components/Composer'
 import { EmptyState } from './components/EmptyState'
 import { MessageList } from './components/MessageList'
@@ -14,15 +15,24 @@ export default function App() {
   const conversations = useConversations(userId)
   const chat = useChatSession(userId)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [dislikedIds, setDislikedIds] = useState<Set<string>>(() => new Set())
+  const [dislikingId, setDislikingId] = useState<string | null>(null)
+  const [feedbackError, setFeedbackError] = useState<string | null>(null)
 
   const onNew = async () => {
     const created = await conversations.create()
     await chat.load(created.id)
+    setDislikedIds(new Set())
+    setDislikingId(null)
+    setFeedbackError(null)
     setSidebarOpen(false)
   }
 
   const onSelect = async (sessionId: number) => {
     await chat.load(sessionId)
+    setDislikedIds(new Set())
+    setDislikingId(null)
+    setFeedbackError(null)
     setSidebarOpen(false)
   }
 
@@ -30,6 +40,9 @@ export default function App() {
     await conversations.remove(sessionId)
     if (chat.sessionId === sessionId) {
       await chat.load(null)
+      setDislikedIds(new Set())
+      setDislikingId(null)
+      setFeedbackError(null)
     }
   }
 
@@ -39,6 +52,9 @@ export default function App() {
       const created = await conversations.create()
       activeId = created.id
       await chat.load(created.id)
+      setDislikedIds(new Set())
+      setDislikingId(null)
+      setFeedbackError(null)
     }
     await chat.send(activeId, text)
     await conversations.refresh()
@@ -50,6 +66,22 @@ export default function App() {
     }
     await chat.resume(chat.sessionId, approved)
     await conversations.refresh()
+  }
+
+  const onDislike = async (messageId: string) => {
+    if (chat.sessionId == null || dislikedIds.has(messageId) || dislikingId) {
+      return
+    }
+    setFeedbackError(null)
+    setDislikingId(messageId)
+    try {
+      await submitSessionFeedback(chat.sessionId, messageId)
+      setDislikedIds((current) => new Set(current).add(messageId))
+    } catch (error) {
+      setFeedbackError(error instanceof Error ? error.message : '无法提交反馈')
+    } finally {
+      setDislikingId(null)
+    }
   }
 
   const hasMessages = chat.messages.length > 0
@@ -79,13 +111,18 @@ export default function App() {
               messages={chat.messages}
               status={chat.status}
               streamingIds={chat.streamingIds}
+              clarifying={chat.clarifying}
+              dislikedIds={dislikedIds}
+              dislikingId={dislikingId}
               onConfirm={(approved) => void onConfirm(approved)}
+              onDislike={(messageId) => void onDislike(messageId)}
             />
           </div>
         ) : (
           <EmptyState />
         )}
         {conversations.error ? <div className="error-banner">{conversations.error}</div> : null}
+        {feedbackError ? <div className="error-banner">{feedbackError}</div> : null}
         <Composer
           status={chat.status}
           error={chat.error}

@@ -302,6 +302,38 @@ textarea:focus-visible {
   line-height: 1.4;
 }
 
+.bubble-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.bubble-action {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 8px;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--mute);
+  cursor: pointer;
+}
+
+.bubble-action:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.bubble-action.is-active {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.bubble-action:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
 .markdown {
   font-size: 15.5px;
   line-height: 1.7;
@@ -681,6 +713,37 @@ textarea:focus-visible {
   }
 }
 
+.clarify-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 8px;
+  padding: 10px 14px;
+  color: var(--mute);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.clarify-loading__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--brand);
+  animation: clarify-pulse 1s ease-in-out infinite;
+}
+
+@keyframes clarify-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 @keyframes msg-in {
   from {
     opacity: 0;
@@ -694,6 +757,7 @@ textarea:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .progress,
+  .clarify-loading__dot,
   .bubble {
     animation: none;
   }
